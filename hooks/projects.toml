@@ -1,0 +1,43 @@
+# Per-project nuance for the fleet hooks. Hook code stays generic — anything
+# project-specific (ports, gate triggers, never-kill ports) lives here.
+#
+# Project keys are matched against the hook's `cwd` payload by longest-prefix
+# match against `cwd_prefix`. Add a new project by adding a new [<name>] table.
+#
+# Paths use forward slashes throughout (cross-shell compatibility on Windows).
+
+[app-launcher]
+cwd_prefix          = "E:/automation/app-launcher"
+webapp_port         = 8445
+session_host_port   = 8446
+gate_trigger_globs  = ["app/webapp/**", "src/launcher.py", "src/session_host*.py"]
+gate_cmd            = "pwsh -File scripts/verify-before-ship.ps1"
+tray_cmd            = "tray.bat"
+api_version_path    = "/api/version"
+
+[photo-ocr]
+cwd_prefix          = "E:/automation/photo-ocr"
+webapp_port         = 8444
+gate_trigger_globs  = ["app/webapp/**"]
+gate_cmd            = "pwsh -File scripts/verify-before-ship.ps1"
+tray_cmd            = "tray.bat"
+api_version_path    = "/api/version"
+
+[voice-transcriber]
+cwd_prefix          = "E:/automation/voice-transcriber"
+gate_cmd            = "pwsh -File scripts/verify-before-ship.ps1"
+tray_cmd            = "tray.bat"
+
+[local-llm-hub]
+cwd_prefix          = "E:/automation/local-llm-hub"
+webapp_port         = 8000
+whisper_port        = 8090
+gate_cmd            = "pwsh -File scripts/verify-before-ship.ps1"
+tray_cmd            = "tray.bat"
+
+# Sister hubs that MUST survive every port-scoped kill, fleet-wide.
+# 8000  = local-llm-hub FastAPI hub
+# 8090  = whisper-server (shared by voice-transcriber + audio/transcribe_voice)
+# 8446  = app-launcher session-host (kill kills every PTY/Claude session)
+[global]
+never_kill_ports = [8000, 8090, 8446]

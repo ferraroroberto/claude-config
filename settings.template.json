@@ -1,0 +1,41 @@
+{
+  "_comment": "Merge the 'hooks' block below into your live ~/.claude/settings.json. Don't replace the whole file — it carries machine-local permissions and secrets that belong to you, not to this repo.",
+  "_paths": "All command paths use forward slashes and the absolute Windows PowerShell 5.1 binary on purpose. Claude Code on Windows routes hook commands through Git Bash, which strips backslashes; and the default 'pwsh' on PATH is a 0-byte WindowsApps reparse stub that fails non-interactively.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook pre_commit_no_ai_trailer"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook safe_kill_guard"
+          },
+          {
+            "type": "command",
+            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook venv_discipline"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook py_syntax_check"
+          }
+        ]
+      }
+    ]
+  }
+}

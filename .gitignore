@@ -1,0 +1,20 @@
+# Local overrides — anything *.local.* is yours alone, not for the public repo
+*.local.*
+settings.local.json
+
+# Installer state (records which junctions/hardlinks were created)
+.claude-config-installed.json
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
