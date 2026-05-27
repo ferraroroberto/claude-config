@@ -110,8 +110,13 @@ bucket. For every finding capture:
 When you see the same pattern twice in two files, that's bucket 1
 (duplication), not two separate bucket-4 findings.
 
-When in doubt about a bucket-5 (bug) finding, leave it out. The bar is "I'd
-bet money on this." Speculation pollutes the issue.
+**Apply the materiality bar (see Hard rules) to every finding as you take
+it.** When in doubt, leave it out — across all five buckets. For bucket 5
+specifically the bar is "I'd bet money on this"; speculation pollutes the
+issue. For buckets 1–4 the bar is "a senior developer would agree this is
+worth a future developer's time to fix." If you can already imagine the
+user reading the finding and going "...so?", drop it before it gets
+written down.
 
 ### 5. Dedupe against existing open issues
 
@@ -214,6 +219,17 @@ findings. Codebase passes the audit.` — and stop.
 
 ## Hard rules
 
+- **Materiality bar — applies to ALL FIVE buckets.** Before filing a
+  finding, ask: *"Would a senior, perfectionist developer reading this
+  agree it's worth a future developer's time to fix?"* If you hesitate
+  for more than a second, drop it. Empty buckets are the **right answer**
+  when there's no material rot — `No actionable findings. Codebase passes
+  the audit.` is a successful run, not a failed one. **Do not file
+  findings to look thorough.** The user would rather get zero issues from
+  a clean codebase than five issues full of noise they have to triage
+  out. Bias is toward filing *fewer*, not more. For bucket 5 (bugs)
+  specifically the bar is even higher — only file what you'd bet money
+  on; false-positive bug reports erode trust in the whole skill.
 - **Never edit files.** This skill files issues; it does not patch code.
 - **Cap is 5 issues per run, period.** Don't split a bucket into multiple
   issues. If a bucket has 30 findings, file one issue with 30 checklist
@@ -222,8 +238,6 @@ findings. Codebase passes the audit.` — and stop.
   the same finding every audit run defeats the purpose.
 - **Citations or it didn't happen.** Every finding must point at a real
   `file:line`. "Lots of duplication in the auth module" is not a finding.
-- **Bucket 5 (bugs) is high-bar.** If you wouldn't bet money on it, leave
-  it out. False-positive bug reports erode trust in the whole skill.
 - **Don't audit `node_modules/`, `.venv/`, `dist/`, generated code, or
   vendored third-party trees.** `git ls-files` already excludes most of
   this, but double-check.
@@ -233,6 +247,43 @@ findings. Codebase passes the audit.` — and stop.
   CLAUDE.md.)
 - **No hard-wrap in issue body paragraphs.** (Per global CLAUDE.md —
   rendered markdown.)
+
+## What's NOT a finding
+
+Concrete anti-examples. If a candidate finding looks like any of these,
+**drop it** — don't try to find a way to make it count:
+
+- **Duplication.** Three lines copied once between two files: not a
+  finding. A constant repeated in two places: not a finding (might even
+  be the right shape — local clarity beats premature abstraction). A
+  50-line block copied four times, or two parallel implementations of
+  the same workflow under different names: **yes**, that's a finding.
+- **Stale / dead code.** One slightly outdated comment, a `TODO` from
+  six months ago, an unused import: not a finding individually (a linter
+  catches the import, and the comment doesn't materially mislead). An
+  entire orphaned module no caller references, a removed feature's
+  scaffolding still imported on startup, a `# removed in v2` block
+  shipped in v5: **yes**.
+- **CLAUDE.md drift.** A typo in a prose paragraph of one CLAUDE.md
+  rule, a single instance of slightly inconsistent phrasing: not a
+  finding (the rule still reads correctly). A rule violated
+  systematically across the codebase (e.g. CLAUDE.md says "use `.venv`"
+  and three modules use `venv/`), or a hard rule contradicted by actual
+  shipped behavior: **yes**.
+- **Maintainability.** One function name that could be slightly more
+  descriptive, a 30-line function that could be 25, a comment that
+  explains the *what* but the code is already obvious: not a finding.
+  A 1500-line god module mixing four unrelated concerns, a public API
+  whose identifiers actively mislead about what they return,
+  copy-pasted error handling 12 times in one file: **yes**.
+- **Bugs.** "This *might* race under high concurrency" without a
+  concrete scenario: not a finding. "This will mis-handle empty input
+  because line N reads `xs[0]` with no guard": **yes** — name the
+  input, name the line, name the failure.
+
+The pattern across all five: **scale and impact matter**. One-off
+cosmetic blemishes are not findings. Systematic problems, structural
+rot, or concrete failure modes are.
 
 ## Notes
 
