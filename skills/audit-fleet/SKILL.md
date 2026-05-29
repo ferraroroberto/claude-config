@@ -10,7 +10,9 @@ description: Run /codebase-audit across every repo in the E:\automation fleet in
 ones that haven't changed since their last audit, fan the changed ones out to
 **parallel sub-agents** (one per repo) that each run the full `/codebase-audit`
 procedure, then collect the results into **one diff-based digest** delivered as
-a Gmail draft and printed to stdout (so a scheduled run captures it in history).
+a Gmail draft — an HTML body that renders headers and tables, with the markdown
+digest attached as a file — and printed to stdout (so a scheduled run captures
+it in history).
 
 **This skill files no issues itself.** The only writes are (a) the audit issues
 that each sub-agent's `/codebase-audit` files, (b) the per-repo `audit-meta`
@@ -158,8 +160,11 @@ last-run-at: <YYYY-MM-DD>
 ...
 ```
 
-Compose the digest (rendered markdown — single long lines per paragraph, no
-hard wraps):
+Compose the digest as markdown (single long lines per paragraph, no hard
+wraps). This markdown is the canonical artifact: it goes to stdout verbatim and
+is attached to the email as a `.md` file; step 7 also renders it to HTML for the
+email body. Structure it so the per-repo results form a clean table when
+rendered:
 
 - **Header:** date, counts — `N repos audited, M issues filed, K unchanged, J skipped`.
 - **Per audited repo:** result line + the issues filed this run (bucket → URL),
@@ -178,14 +183,33 @@ and the current per-repo open-audit-issue counts, so next week can diff.
 ### 7. Deliver the digest
 
 Two channels. stdout is the reliable one (a scheduled run captures it in
-app-launcher's job history); the email is best-effort.
+app-launcher's job history); the email is best-effort. The email itself carries
+the digest as a **rich artifact** — an HTML body that renders headers and tables
+in Gmail, plus the markdown digest attached as a file — never as raw markdown in
+the plain-text body (Gmail shows that as literal `##`, `|`-pipes, and
+`[text](url)` syntax).
 
-- **stdout:** print the full digest. Always.
+- **stdout:** print the full markdown digest. Always.
 - **Gmail draft:** call `mcp__claude_ai_Gmail__create_draft` with
   `to: ["roberto.ferraro@gmail.com"]`, subject
-  `Fleet audit <YYYY-MM-DD> — <N> repos changed, <M> issues filed`, body = the
-  digest markdown. The Gmail MCP creates a **draft** (it has no auto-send) — the
-  digest lands ready-to-send in Gmail, not auto-delivered. If the Gmail tool is
+  `Fleet audit <YYYY-MM-DD> — <N> repos changed, <M> issues filed`, and:
+  - **`htmlBody`** = the digest rendered as HTML — real `<h2>`/`<h3>` headers,
+    the per-repo result/delta grid as a `<table>` (repo · result · filed this
+    run · delta vs last week), filed-issue lists as `<ul>` with `<a>` links to
+    each issue. This is the channel that makes the digest readable; build it
+    deliberately, don't just wrap the markdown in `<pre>`.
+  - **`body`** = the same digest as plain markdown — the plain-text alternative
+    for clients without HTML.
+  - **`attachments`** = the markdown digest as one file,
+    `filename: "fleet-audit-<YYYY-MM-DD>.md"`, `mimeType: "text/markdown"`,
+    `content` = its base64-encoded bytes. This is the annex the user can open as
+    a proper file. The tool description hedges that attachments are "not
+    supported yet" — so treat it as **best-effort**: if the call is rejected or
+    the attachment is dropped, note `attachment: skipped (<reason>)`, keep the
+    HTML body, and carry on. Never fail the run over the attachment.
+
+  The Gmail MCP creates a **draft** (it has no auto-send) — the digest lands
+  ready-to-send in Gmail, not auto-delivered. If the Gmail tool itself is
   unavailable or errors (e.g. the MCP connector isn't loaded in a headless run),
   note `email: skipped (<reason>)` and rely on stdout. **Never** fail the run
   over the email.
@@ -195,8 +219,8 @@ app-launcher's job history); the email is best-effort.
 ### 8. Final report
 
 One concise block: the plan line from step 3, per-repo results, where the
-digest went (stdout always; draft created / skipped), and the digest-state
-issue URL. Stop.
+digest went (stdout always; draft created / skipped, and whether the `.md`
+attachment was accepted or skipped), and the digest-state issue URL. Stop.
 
 ## Hard rules
 
