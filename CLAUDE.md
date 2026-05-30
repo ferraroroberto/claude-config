@@ -22,6 +22,17 @@ Exit plan mode only after I explicitly approve.
 - **Hooks block by exit-code 2** with a single short reason on stderr. Non-blocking hooks print a single nudge line on stdout and exit 0.
 - **Hooks read stdin as JSON** via `_lib.stdin_json()`. PowerShell shims use `[Console]::In.ReadToEnd()` (per the global gotcha) and pipe straight to the Python module.
 
+## Adding a new fleet project
+
+When a new repo is created under `E:/automation/`, **always** add a minimal entry to `hooks/projects.toml` before the `[global]` block:
+
+```toml
+[my-new-project]
+cwd_prefix = "E:/automation/my-new-project"
+```
+
+This is required for `notify_on_idle` to show the correct project name in Slack pings. Without it the hook falls back to `[claude]`, making it impossible to tell which project needs attention. Add port/gate/tray fields only if the project has a tray app or a verification gate.
+
 ## Verification
 
 ```powershell
