@@ -175,8 +175,13 @@ Then fire the single completion ping with the deterministic helper — canonical
 format, real PR title + URL from `gh`, suppresses the follow-up idle ping:
 
 ```
-py C:/Users/rober/.claude/hooks/notify_complete.py --kind yolo --issue <N> --pr <PR>
+py C:/Users/rober/.claude/hooks/notify_complete.py --kind yolo --issue <N> --pr <PR> --pr-url <PR_URL>
 ```
+
+`<PR_URL>` is the full PR URL (e.g. `https://github.com/owner/repo/pull/31`) —
+pass the URL you already have from `gh pr create` or `gh pr view`. This makes
+the title/URL lookup CWD-independent so it works correctly from subagent
+contexts where the shell's working directory may differ from the project root.
 
 Silent no-op if no channel is configured; always exits 0, so it can never block
 or delay the finish.
