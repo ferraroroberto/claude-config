@@ -14,11 +14,17 @@ notification failure can't break or delay a skill.
 
 Usage::
 
-    py ~/.claude/hooks/notify_complete.py --kind finish --issue 30 --pr 31
+    py ~/.claude/hooks/notify_complete.py --kind finish --issue 30 --pr 31 --pr-url https://github.com/owner/repo/pull/31
     py ~/.claude/hooks/notify_complete.py --kind add    --issue 30
     py ~/.claude/hooks/notify_complete.py --kind start  --issue 30 --summary "review the diff, then /issue-finish"
-    py ~/.claude/hooks/notify_complete.py --kind yolo   --issue 30 --pr 31
+    py ~/.claude/hooks/notify_complete.py --kind yolo   --issue 30 --pr 31 --pr-url https://github.com/owner/repo/pull/31
     py ~/.claude/hooks/notify_complete.py --kind batch  --passed 2 --total 3
+
+Pass ``--pr-url`` whenever the full PR URL is already known (e.g. from ``gh pr
+create`` output). The helper will use that URL directly and look up the title
+via the absolute URL — which works regardless of the caller's CWD. Without
+``--pr-url`` the helper falls back to a CWD-relative ``gh pr view <N>`` lookup,
+which fails silently when CWD is not the project repo.
 """
 
 from __future__ import annotations
@@ -64,19 +70,34 @@ def gh_json(args: List[str]) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def lookup(kind: str, issue: Optional[str], pr: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+def lookup(
+    kind: str,
+    issue: Optional[str],
+    pr: Optional[str],
+    pr_url: Optional[str] = None,
+) -> Tuple[Optional[str], Optional[str]]:
     """Best-effort ``(title, url)`` from GitHub for this ping.
 
-    PR-linking kinds read the PR; the rest read the issue. ``(None, None)`` when
-    gh is unavailable, so the message still goes out — just without title/link.
+    PR-linking kinds: if ``pr_url`` is supplied the URL is used as-is and the
+    title is looked up via the absolute URL (works from any CWD). Without
+    ``pr_url`` falls back to a CWD-relative ``gh pr view <N>`` which fails
+    silently when the caller is not inside the project repo. Issue-linking kinds
+    always use a CWD-relative ``gh issue view`` lookup. ``(None, None)`` on any
+    gh / network error so the message still goes out link-less.
     """
-    if kind in _PR_KINDS and pr:
-        data = gh_json(["pr", "view", str(pr), "--json", "title,url"])
-    elif issue:
+    if kind in _PR_KINDS:
+        if pr_url:
+            # Absolute URL: works from any directory.
+            data = gh_json(["pr", "view", pr_url, "--json", "title"])
+            return data.get("title"), pr_url
+        if pr:
+            data = gh_json(["pr", "view", str(pr), "--json", "title,url"])
+            return data.get("title"), data.get("url")
+        return None, None
+    if issue:
         data = gh_json(["issue", "view", str(issue), "--json", "title,url"])
-    else:
-        data = {}
-    return data.get("title"), data.get("url")
+        return data.get("title"), data.get("url")
+    return None, None
 
 
 def build_message(
@@ -120,6 +141,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument("--issue", help="Issue number (shown as #N).")
     parser.add_argument("--pr", help="PR number, for finish/yolo (linked).")
+    parser.add_argument(
+        "--pr-url",
+        dest="pr_url",
+        help="Full PR URL (e.g. https://github.com/owner/repo/pull/31). "
+             "When supplied the URL is used directly and the title lookup uses "
+             "the absolute URL, so it works regardless of CWD.",
+    )
     parser.add_argument("--summary", help="One concise next-step line, for start.")
     parser.add_argument("--passed", help="Passed count, for batch.")
     parser.add_argument("--total", help="Total count, for batch.")
@@ -133,7 +161,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     title, url = (None, None)
     if args.kind != "batch":
-        title, url = lookup(args.kind, args.issue, args.pr)
+        title, url = lookup(args.kind, args.issue, args.pr, pr_url=args.pr_url)
 
     text = build_message(
         args.kind,

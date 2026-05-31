@@ -87,15 +87,16 @@ gate result, and the live build line.
 ### 8. Slack notification
 
 After the summary, fire the completion ping with the deterministic helper. It
-resolves the channel/user from `projects.toml`, pulls the **real** PR title +
-URL from `gh` itself, and emits the one canonical format — so every Done ping is
-byte-identical and correctly linked, with no chance of a paraphrased or missing
-link. It also suppresses the redundant follow-up idle ping. Run:
+resolves the channel/user from `projects.toml`, emits the one canonical format,
+and suppresses the redundant follow-up idle ping. Run:
 
 ```
-py C:/Users/rober/.claude/hooks/notify_complete.py --kind finish --issue <N> --pr <PR>
+py C:/Users/rober/.claude/hooks/notify_complete.py --kind finish --issue <N> --pr <PR> --pr-url <PR_URL>
 ```
 
-Pass the issue number and the PR number — nothing else; the helper derives the
-rest. If no channel is configured it's a silent no-op, and it always exits 0, so
-a notification failure can never block or delay anything.
+`<PR_URL>` is the full PR URL (e.g. `https://github.com/owner/repo/pull/31`) —
+pass the URL you already have from `gh pr create` or `gh pr view`. This makes
+the title/URL lookup CWD-independent so it works correctly from subagent
+contexts where the shell's working directory may differ from the project root.
+If no channel is configured it's a silent no-op, and it always exits 0, so a
+notification failure can never block or delay anything.
