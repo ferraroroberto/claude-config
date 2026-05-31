@@ -1,24 +1,13 @@
 ---
 name: audit-fleet
-description: Run /codebase-audit across every repo in the E:\automation fleet in one pass — enumerate the local ferraroroberto repos, skip the ones unchanged since their last audit (per-repo ledger gate), fan the changed ones out to parallel sub-agents that each run the full audit, then emit one diff-based weekly digest as a Gmail draft (and to stdout). Built to run unattended on a weekly schedule. Use when the user wants a whole-fleet quality sweep — e.g. "/audit-fleet", "audit the whole fleet", "weekly codebase audit across all repos".
+description: Run /codebase-audit across every repo in the E:\automation fleet in one pass — enumerate the local ferraroroberto repos, skip the ones unchanged since their last audit (per-repo ledger gate), fan the changed ones out to parallel sub-agents that each run the full audit, then emit one diff-based weekly digest as a GitHub comment on the audit-fleet ledger issue + a Slack ping with the link (and to stdout). Built to run unattended on a weekly schedule. Use when the user wants a whole-fleet quality sweep — e.g. "/audit-fleet", "audit the whole fleet", "weekly codebase audit across all repos".
 ---
 
 # audit-fleet
 
-**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around
-`/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip the
-ones that haven't changed since their last audit, fan the changed ones out to
-**parallel sub-agents** (one per repo) that each run the full `/codebase-audit`
-procedure, then collect the results into **one diff-based digest** delivered as
-a Gmail draft — an HTML body that renders headers and tables, with the markdown
-digest attached as a file — and printed to stdout (so a scheduled run captures
-it in history).
+**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip the ones that haven't changed since their last audit, fan the changed ones out to **parallel sub-agents** (one per repo) that each run the full `/codebase-audit` procedure, then collect the results into **one diff-based digest** posted as a GitHub comment on the `audit-fleet digest state` ledger issue in `claude-config` (the running log) and printed to stdout (so a scheduled run captures it in history). A Slack ping with the comment link is sent deterministically via `notify_complete.py --kind audit`.
 
-**This skill files no issues itself.** The only writes are (a) the audit issues
-that each sub-agent's `/codebase-audit` files, (b) the per-repo `audit-meta`
-ledger those audits update, and (c) one `audit-fleet digest state` ledger issue
-in `claude-config` for week-over-week deltas, plus the Gmail draft. It never
-edits source, commits, pushes, or restarts anything.
+**This skill files no issues itself.** The only writes are (a) the audit issues that each sub-agent's `/codebase-audit` files, (b) the per-repo `audit-meta` ledger those audits update, (c) one `audit-fleet digest state` ledger issue in `claude-config` for week-over-week deltas, and (d) the digest comment on that issue. It never edits source, commits, pushes, or restarts anything.
 
 **Designed for unattended runs.** A weekly app-launcher job invokes this via
 `claude -p "/audit-fleet" --model claude-opus-4-7 --effort high
@@ -183,45 +172,32 @@ and the current per-repo open-audit-issue counts, so next week can diff.
 
 ### 7. Deliver the digest
 
-Two channels. stdout is the reliable one (a scheduled run captures it in
-app-launcher's job history); the email is best-effort. The email itself carries
-the digest as a **rich artifact** — an HTML body that renders headers and tables
-in Gmail, plus the markdown digest attached as a file — never as raw markdown in
-the plain-text body (Gmail shows that as literal `##`, `|`-pipes, and
-`[text](url)` syntax).
+Two channels. stdout is the reliable one (a scheduled run captures it in app-launcher's job history); the GitHub comment is the durable record that the Slack ping links to.
 
 - **stdout:** print the full markdown digest. Always.
-- **Gmail draft:** call `mcp__claude_ai_Gmail__create_draft` with
-  `to: ["roberto.ferraro@gmail.com"]`, subject
-  `Fleet audit <YYYY-MM-DD> — <N> repos changed, <M> issues filed`, and:
-  - **`htmlBody`** = the digest rendered as HTML — real `<h2>`/`<h3>` headers,
-    the per-repo result/delta grid as a `<table>` (repo · result · filed this
-    run · delta vs last week), filed-issue lists as `<ul>` with `<a>` links to
-    each issue. This is the channel that makes the digest readable; build it
-    deliberately, don't just wrap the markdown in `<pre>`.
-  - **`body`** = the same digest as plain markdown — the plain-text alternative
-    for clients without HTML.
-  - **`attachments`** = the markdown digest as one file,
-    `filename: "fleet-audit-<YYYY-MM-DD>.md"`, `mimeType: "text/markdown"`,
-    `content` = its base64-encoded bytes. This is the annex the user can open as
-    a proper file. The tool description hedges that attachments are "not
-    supported yet" — so treat it as **best-effort**: if the call is rejected or
-    the attachment is dropped, note `attachment: skipped (<reason>)`, keep the
-    HTML body, and carry on. Never fail the run over the attachment.
+- **GitHub comment:** post the digest as a comment on the `audit-fleet digest state` issue (#18 in `ferraroroberto/claude-config`) — this turns the ledger issue into a running log of every weekly run. Use the `gh issue comment` output URL:
 
-  The Gmail MCP creates a **draft** (it has no auto-send) — the digest lands
-  ready-to-send in Gmail, not auto-delivered. If the Gmail tool itself is
-  unavailable or errors (e.g. the MCP connector isn't loaded in a headless run),
-  note `email: skipped (<reason>)` and rely on stdout. **Never** fail the run
-  over the email.
-- **No rolling issue comment** — deliberately dropped as noise; the per-repo
-  audit issues are the durable record and everything already lives in GitHub.
+  ```bash
+  COMMENT_URL=$(gh issue comment 18 --repo ferraroroberto/claude-config --body "$DIGEST_MARKDOWN")
+  # gh issue comment prints the URL of the created comment on stdout
+  ```
+
+  If `gh` fails or the URL is empty, note `comment: skipped (<reason>)` and carry on. **Never fail the run over the comment.**
+
+- **Slack ping:** call `notify_complete.py --kind audit` with the captured comment URL and a one-line summary. This is deterministic — the skill hands the hook exact structured args; the hook assembles the message:
+
+  ```
+  py C:/Users/rober/.claude/hooks/notify_complete.py \
+    --kind audit \
+    --comment-url "$COMMENT_URL" \
+    --summary "<N> audited, <M> issues filed, <K> unchanged"
+  ```
+
+  If `COMMENT_URL` is empty (comment was skipped), omit `--comment-url` so the ping still goes out link-less. This call is a silent no-op if no `slack_notify_channel` is configured; it always exits 0 and can never block or delay the finish.
 
 ### 8. Final report
 
-One concise block: the plan line from step 3, per-repo results, where the
-digest went (stdout always; draft created / skipped, and whether the `.md`
-attachment was accepted or skipped), and the digest-state issue URL. Stop.
+One concise block: the plan line from step 3, per-repo results, where the digest went (stdout always; comment URL or skipped reason; Slack pinged or no-op), and the digest-state issue URL. Stop.
 
 ## Hard rules
 
@@ -231,7 +207,7 @@ attachment was accepted or skipped), and the digest-state issue URL. Stop.
   both, or they will disagree and either re-audit needlessly or skip wrongly.
 - **Read-only on source.** This skill and its sub-agents never edit code,
   commit, push, or restart. The only writes are audit issues, the per-repo
-  ledger, the digest-state issue, and the Gmail draft.
+  ledger, the digest-state issue, and the digest comment.
 - **Never disturb in-progress work.** Dirty or off-default-branch repos are
   skipped and reported, never stashed or force-switched.
 - **One sub-agent per repo, parallel, background, opus.** No worktrees (audits

@@ -195,7 +195,7 @@ def main() -> int:
     return 0 if failures == 0 else 1
 
 
-_UNIT_CHECK_COUNT = 26
+_UNIT_CHECK_COUNT = 28
 
 
 def _slack_notify_unit_checks() -> int:
@@ -356,7 +356,7 @@ def _notify_classify_unit_checks() -> int:
     return failures
 
 
-_NOTIFY_COMPLETE_COUNT = 7
+_NOTIFY_COMPLETE_COUNT = 9
 
 
 def _notify_complete_unit_checks() -> int:
@@ -386,6 +386,10 @@ def _notify_complete_unit_checks() -> int:
           bm("batch", passed="2", total="3") == "🏁 Batch done: 2/3 passed — /issue-finish each branch to ship")
     check("build: finish with no url/title degrades cleanly",
           bm("finish", issue="5") == "✅ Done #5 — PR merged")
+    check("build: audit -> fleet audit + summary + comment link",
+          bm("audit", summary="3 audited, 2 issues", url="http://gh/comment") == "📊 Fleet audit — 3 audited, 2 issues · http://gh/comment")
+    check("build: audit with no url degrades cleanly",
+          bm("audit", summary="0 audited") == "📊 Fleet audit — 0 audited")
 
     # The shared resolver: unknown cwd -> [global] channel/user + 'claude' name.
     ch, usr, nm = _lib.resolve_slack_target(Path("E:/does/not/match/anything"))

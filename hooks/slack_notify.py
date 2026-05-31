@@ -64,6 +64,7 @@ _TERMINAL_MARKS = (
     ("🚦", ":vertical_traffic_light:"),  # start
     ("🏁", ":checkered_flag:"),          # batch
     ("🚀", ":rocket:"),                  # yolo
+    ("📊", ":bar_chart:"),               # audit
 )
 
 # Flat tuple of every token (unicode + shortcode) that leads a completion ping.
