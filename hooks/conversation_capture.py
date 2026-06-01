@@ -148,6 +148,8 @@ def make_description(messages: list[tuple[str, str]]) -> str:
         if role != "user":
             continue
         clean = _strip_command_tags(text)
+        if "***" in clean:
+            clean = clean.split("***", 1)[1].strip()
         if len(clean) < 10:
             continue
         if _is_preamble(text):
