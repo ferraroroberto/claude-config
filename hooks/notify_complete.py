@@ -21,6 +21,7 @@ Usage::
     py ~/.claude/hooks/notify_complete.py --kind batch  --passed 2 --total 3
     py ~/.claude/hooks/notify_complete.py --kind audit  --comment-url https://github.com/ferraroroberto/claude-config/issues/18#issuecomment-123 --summary "3 audited, 2 issues filed, 24 unchanged"
     py ~/.claude/hooks/notify_complete.py --kind cleanup --summary documentation --merged 5 --review 2
+    py ~/.claude/hooks/notify_complete.py --kind recap --summary "5 skills swept, 3 proposals"
 
 For ``--kind cleanup`` (the closing roll-up of a ``/cleanup-fleet`` swarm) pass
 ``--summary`` (the bucket name), ``--merged`` (sonnet issues YOLO'd to a merged
@@ -151,6 +152,9 @@ def build_message(
     if kind == "audit":
         summary_part = f" — {summary}" if summary else ""
         return f"📊 Fleet audit{summary_part}{link}"
+    if kind == "recap":
+        summary_part = f" — {summary}" if summary else ""
+        return f"🔄 Weekly recap{summary_part}"
     if kind == "cleanup":
         bucket = f" {summary.strip()}" if summary and summary.strip() else ""
         parts: List[str] = []
@@ -170,7 +174,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--kind", required=True,
-        choices=["add", "start", "finish", "yolo", "batch", "audit", "cleanup"]
+        choices=["add", "start", "finish", "yolo", "batch", "audit", "cleanup", "recap"]
     )
     parser.add_argument("--issue", help="Issue number (shown as #N).")
     parser.add_argument("--pr", help="PR number, for finish/yolo (linked).")
@@ -200,7 +204,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0  # opt-in: not configured → silent no-op
 
     title, url = (None, None)
-    if args.kind not in ("batch", "cleanup"):
+    if args.kind not in ("batch", "cleanup", "recap"):
         title, url = lookup(
             args.kind, args.issue, args.pr,
             pr_url=args.pr_url, comment_url=getattr(args, "comment_url", None),

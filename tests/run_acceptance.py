@@ -198,7 +198,7 @@ def main() -> int:
     return 0 if failures == 0 else 1
 
 
-_UNIT_CHECK_COUNT = 31
+_UNIT_CHECK_COUNT = 33
 
 
 def _slack_notify_unit_checks() -> int:
@@ -417,6 +417,10 @@ def _notify_complete_unit_checks() -> int:
     check("build: cleanup easy-mode (0 review) drops the review clause",
           bm("cleanup", summary="documentation", merged="3", review="0")
           == "🧹 Cleanup documentation: 3 merged")
+    check("build: recap -> weekly recap + summary",
+          bm("recap", summary="5 skills swept, 3 proposals") == "🔄 Weekly recap — 5 skills swept, 3 proposals")
+    check("build: recap with no summary degrades cleanly",
+          bm("recap") == "🔄 Weekly recap")
 
     # The shared resolver: unknown cwd -> [global] channel/user + 'claude' name.
     ch, usr, nm = _lib.resolve_slack_target(Path("E:/does/not/match/anything"))
