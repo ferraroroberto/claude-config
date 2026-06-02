@@ -1,7 +1,8 @@
 """Deterministic identity for audit-managed GitHub issues.
 
 The audit skills (`/codebase-audit`, `/audit-fleet`) keep exactly one open issue
-per *kind* per repo: a ledger, a digest, and one per finding bucket. Idempotency
+per *kind* per repo: a ledger, a digest, the cross-fleet practices ledger, and
+one per finding bucket. Idempotency
 used to ride on LLM judgment, which slips under the unattended `claude -p` path
 and spawns duplicates. This helper moves the create-vs-reuse decision into Python,
 keyed on a hidden marker in the issue body, so duplication is structurally
@@ -41,6 +42,7 @@ import tempfile
 KINDS = (
     "ledger",
     "digest",
+    "practices",
     "duplication",
     "stale",
     "claude-md-drift",
@@ -81,6 +83,8 @@ def title_matches(title: str, kind: str) -> bool:
         return t == "codebase-audit ledger"
     if kind == "digest":
         return t == "audit-fleet digest state"
+    if kind == "practices":
+        return t == "fleet practices ledger"
     # bucket kinds: "audit: <kind> findings ..." (trailing count suffix tolerated)
     return re.match(r"^audit:\s*" + re.escape(kind) + r"\s+findings\b", t) is not None
 

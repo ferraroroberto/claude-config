@@ -190,6 +190,18 @@ worth a future developer's time to fix." If you can already imagine the
 user reading the finding and going "...so?", drop it before it gets
 written down.
 
+**Promotion candidates (a second lens on the same read — not a bucket).** While
+reading, also jot anything *worth preserving fleet-wide* — the inverse of a
+finding: (a) a **fleet-worthy asset** — a hard-won, reusable, well-built
+solution another repo would want to copy (an infra setup, a stealth-browser
+helper, a notable architectural pattern), noting *where it lives*; (b) a
+**generalizable-convention candidate** — a project-local convention that ought
+to propagate up to `project-scaffolding` per the global CLAUDE.md rule. Same
+materiality bar, even higher: only what a senior dev would actually reach for
+later. These are **never issues and never a write to another repo** — they are
+surfaced in the final report only (step 10), where `/audit-fleet` collects them
+into the cross-fleet practices ledger. Most runs will have zero; that is fine.
+
 ### 6. Dedupe against existing open issues
 
 ```
@@ -359,7 +371,15 @@ Print one summary table and stop. Exact shape:
     - <file>:<line> — dupe of #<N>
 
   files inspected: <count>   (prioritization: <none | recent + entry points | …>)
+
+  promotion candidates spotted:    (omit the block entirely if none)
+    - asset:      <repo-relative path / module> — <one-line capability>
+    - convention: <convention> — generalizable because <…>
 ```
+
+The `promotion candidates spotted:` block is the only place these surface — it
+carries no issue, files nothing, and is what `/audit-fleet` reads to feed the
+cross-fleet practices ledger. Omit it when there are none.
 
 If every bucket was empty after dedupe, say so explicitly: `No actionable
 findings. Codebase passes the audit.` — and stop.
@@ -378,6 +398,10 @@ findings. Codebase passes the audit.` — and stop.
   specifically the bar is even higher — only file what you'd bet money
   on; false-positive bug reports erode trust in the whole skill.
 - **Never edit files.** This skill files issues; it does not patch code.
+- **Promotion candidates never become issues or foreign-repo writes.** They are
+  the inverse of a finding (an asset to preserve, not rot to fix) and are
+  surfaced in the final report only. Filing or cataloguing them is
+  `/audit-fleet`'s job, never this skill's.
 - **Cap is 6 issues per run, period.** Don't split a bucket into multiple
   issues. If a bucket has 30 findings, file one issue with 30 checklist
   items — the user can triage which to fix via `/issue-start`.
