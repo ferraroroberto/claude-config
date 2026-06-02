@@ -40,11 +40,17 @@ check(restamped.count("audit-managed") == 1, "ensure_marker single marker")
 check(restamped.startswith("<!-- audit-managed: kind=stale -->"), "ensure_marker replaced kind")
 # ensure_marker: empty body
 check(ai.ensure_marker("", "ledger") == "<!-- audit-managed: kind=ledger -->\n", "ensure_marker empty")
+# practices kind round-trips through the marker like any other kind
+pm = ai.ensure_marker("## Capabilities\n- x", "practices")
+check(ai.has_marker(pm, "practices"), "practices marker round-trip")
+check(not ai.has_marker(pm, "ledger"), "practices marker not ledger")
 
 # ---- title adoption (pre-marker issues) ----
 
 check(ai.title_matches("codebase-audit ledger", "ledger"), "title ledger")
 check(ai.title_matches("audit-fleet digest state", "digest"), "title digest")
+check(ai.title_matches("fleet practices ledger", "practices"), "title practices")
+check(not ai.title_matches("fleet practices ledger", "ledger"), "title practices not ledger")
 check(ai.title_matches("audit: bug findings (3 items)", "bug"), "title bucket w/ count")
 check(ai.title_matches("audit: bug findings", "bug"), "title bucket no count")
 check(ai.title_matches("audit: claude-md-drift findings (2 items)", "claude-md-drift"), "title hyphen kind")
@@ -84,6 +90,7 @@ check(keep == 30 and close == [40], "plan local-llm-hub dup")
 
 # kinds list sanity
 check("ledger" in ai.KINDS and "documentation" in ai.KINDS, "KINDS populated")
+check("practices" in ai.KINDS, "KINDS has practices")
 
 if _fails:
     print("FAIL test_audit_issue:")

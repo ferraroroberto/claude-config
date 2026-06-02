@@ -1,13 +1,13 @@
 ---
 name: audit-fleet
-description: Run /codebase-audit across every repo in the E:\automation fleet in one pass — enumerate the local ferraroroberto repos, skip the ones unchanged since their last audit (per-repo ledger gate), fan the changed ones out to parallel sub-agents that each run the full audit, then emit one diff-based weekly digest as a GitHub comment on the audit-fleet ledger issue + a Slack ping with the link (and to stdout). Built to run unattended on a weekly schedule. Use when the user wants a whole-fleet quality sweep — e.g. "/audit-fleet", "audit the whole fleet", "weekly codebase audit across all repos".
+description: Run /codebase-audit across every repo in the E:\automation fleet in one pass — enumerate the local ferraroroberto repos, skip the ones unchanged since their last audit (per-repo ledger gate), fan the changed ones out to parallel sub-agents that each run the full audit, then emit one diff-based weekly digest as a GitHub comment on the audit-fleet ledger issue + a Slack ping with the link (and to stdout). Also catalogs each repo's hard-won reusable solutions into one cross-fleet "practices ledger" issue in project-scaffolding. Built to run unattended on a weekly schedule. Use when the user wants a whole-fleet quality sweep — e.g. "/audit-fleet", "audit the whole fleet", "weekly codebase audit across all repos".
 ---
 
 # audit-fleet
 
 **Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip the ones that haven't changed since their last audit, fan the changed ones out to **parallel sub-agents** (one per repo) that each run the full `/codebase-audit` procedure, then collect the results into **one diff-based digest** posted as a GitHub comment on the `audit-fleet digest state` ledger issue in `claude-config` (the running log) and printed to stdout (so a scheduled run captures it in history). A Slack ping with the comment link is sent deterministically via `notify_complete.py --kind audit`.
 
-**This skill files no issues itself.** The only writes are (a) the audit issues that each sub-agent's `/codebase-audit` files, (b) the per-repo `audit-meta` ledger those audits update, (c) one `audit-fleet digest state` ledger issue in `claude-config` for week-over-week deltas, and (d) the digest comment on that issue. It never edits source, commits, pushes, or restarts anything.
+**This skill files no issues itself.** The only writes are (a) the audit issues that each sub-agent's `/codebase-audit` files, (b) the per-repo `audit-meta` ledger those audits update, (c) one `audit-fleet digest state` ledger issue in `claude-config` for week-over-week deltas, (d) the digest comment on that issue, and (e) one cross-fleet `fleet practices ledger` issue in `project-scaffolding` cataloguing reusable solutions. It never edits source, commits, pushes, or restarts anything.
 
 **Designed for unattended runs.** A weekly app-launcher job invokes this via
 `claude -p "/audit-fleet" --model claude-opus-4-7 --effort high
@@ -125,6 +125,8 @@ Report back in this exact shape so the orchestrator can build the digest:
   - Filed: <bucket → issue URL, one per line; omit if none>
   - Skipped-as-dupe: <count>
   - Files inspected: <count>
+  - Promotion candidates: <the `promotion candidates spotted:` block from
+    /codebase-audit's final report — asset/convention lines, verbatim; omit if none>
   - Note: <one line if anything surprising came up>
 ```
 
@@ -135,8 +137,59 @@ background agent completes.
 ### 5. Collect results
 
 As each sub-agent returns, hold its structured report. When **all** have
-returned, proceed to the digest. (A sub-agent that errors out is recorded as
-`ERROR` for its repo and does not block the others.)
+returned, proceed to the practices ledger (5b) then the digest. (A sub-agent
+that errors out is recorded as `ERROR` for its repo and does not block the
+others.)
+
+### 5b. Upsert the fleet practices ledger
+
+Collect the `Promotion candidates` lines from every sub-agent report. If **all**
+were empty, skip this step (the digest still notes "no new assets"). Otherwise
+maintain one living catalog issue in **`ferraroroberto/project-scaffolding`** —
+the cross-fleet "things that work" ledger. It is the inverse of the audit
+issues (assets to remember, not rot to fix), so it lives outside the per-repo
+flow and is labelled `audit-meta` so `/issue-triage` filters it out.
+
+Read the existing ledger, then merge — same discipline as `/codebase-audit`
+step 8:
+
+```
+py C:/Users/rober/.claude/skills/_lib/audit_issue.py get \
+  --repo ferraroroberto/project-scaffolding --kind practices
+```
+
+Merge this run's candidates into the returned body: **preserve every existing
+entry verbatim** (the catalog is durable memory), **dedupe by repo + capability**
+(don't re-add an asset already listed; refresh its `Where:` path if it moved),
+and append a dated `## Ledger run log` bullet. Sort candidates into the two
+sections — **Capabilities** (fleet-worthy assets) and **Convention candidates**
+(nominations for `project-scaffolding`). The ledger only *nominates* conventions;
+actually filing one is a manual `/issue-add` call, so the weekly run never
+auto-spams `project-scaffolding`. Body shape (no hard wraps; the helper prepends
+the `kind=practices` marker — keep the `<!-- fleet-practices -->` block intact):
+
+```
+<!-- fleet-practices -->
+## Capabilities
+- **<repo>** — <capability one-liner>. Where: `<path/module>`. Reach for this when ...
+## Convention candidates (nominate to project-scaffolding)
+- **<repo>** — <convention>. Generalizable because ... → /issue-add if adopted.
+## Ledger run log
+- <YYYY-MM-DD>: +N capabilities, +M candidates from <repos>.
+```
+
+Write to a repo-scoped temp file (never a fixed shared name — see the global
+tmp-file gotcha; e.g. `E:/tmp/audit-practices-ledger.md`) and upsert:
+
+```
+py C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
+  --repo ferraroroberto/project-scaffolding --kind practices --label audit-meta \
+  --title "fleet practices ledger" --body-file <tmpfile>
+```
+
+Capture the printed URL as `PRACTICES_LEDGER_URL` for the digest. If the upsert
+fails (e.g. no access to `project-scaffolding`), note `practices: skipped
+(<reason>)` and carry on — **never fail the run over the ledger.**
 
 ### 6. Build the diff-based digest
 
@@ -167,6 +220,9 @@ rendered:
 - **What's new this week:** the issues filed *this run* are by definition the
   delta — list them at the top so the email leads with what changed, not
   standing backlog.
+- **New fleet assets this week:** the promotion candidates added to the practices
+  ledger this run (asset/convention one-liners), with the `PRACTICES_LEDGER_URL`.
+  If none were added, one line: `No new fleet assets catalogued this week.`
 
 Then upsert the digest-state ledger issue with today's date and the current
 per-repo open-audit-issue counts, so next week can diff. The helper handles
@@ -219,7 +275,9 @@ One concise block: the plan line from step 3, per-repo results, where the digest
   both, or they will disagree and either re-audit needlessly or skip wrongly.
 - **Read-only on source.** This skill and its sub-agents never edit code,
   commit, push, or restart. The only writes are audit issues, the per-repo
-  ledger, the digest-state issue, and the digest comment.
+  ledger, the digest-state issue, the digest comment, and the cross-fleet
+  practices ledger in `project-scaffolding`. The practices ledger is the one
+  write target outside `claude-config` — still an issue, never source.
 - **Never disturb in-progress work.** Dirty or off-default-branch repos are
   skipped and reported, never stashed or force-switched.
 - **One sub-agent per repo, parallel, background, opus.** No worktrees (audits
