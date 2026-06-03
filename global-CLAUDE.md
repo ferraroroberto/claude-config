@@ -120,6 +120,10 @@ When invoking `& .\.venv\Scripts\python.exe <path-outside-project>` (e.g. a scri
 
 **Better when possible:** if the script *can* live inside the repo (a gitignored scratch dir is fine), use `& .\.venv\Scripts\python.exe -m <module.path>` from the project root — `-m` adds CWD to `sys.path` and no env var is needed. Only reach for `PYTHONPATH` when the script genuinely must live elsewhere.
 
+### Windows Python: UTF-8 stdout under capture
+
+Piped/redirected stdout (every captured run) makes Python fall back to cp1252, so any emoji/box-drawing `print()` throws `UnicodeEncodeError` and exits 1 — even though it works in the real terminal. Set `$env:PYTHONUTF8 = "1"` before invoking python under capture. Durable code fix: `sys.stdout.reconfigure(encoding="utf-8")` (and stderr) at entry points.
+
 ### Browser automation must not look like a bot
 
 Every Playwright / automated-browser launch in any project must present as a real human Chrome session. Concretely:
