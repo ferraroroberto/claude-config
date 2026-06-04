@@ -1,12 +1,12 @@
 # Global instructions
 
-User-level memory loaded into every Claude Code session on this machine.
+User-level memory loaded into every coding-agent session on this machine. This one file is the single source of truth for **both** agents: Claude Code reads it as `~/.claude/CLAUDE.md`, Codex reads it as `~/.codex/AGENTS.md` (same file, linked). Guidance applies to whichever agent is reading it; the few sections that are genuinely specific to one agent are marked *(… only — skip on other agents)*.
 
 ## Workflow defaults
 
-### Commit messages — no Claude/AI attribution
+### Commit messages — no AI attribution
 
-Do not add `Co-Authored-By: Claude ...` or any other Claude/Anthropic/AI attribution trailer to git commit messages. The user explicitly rejected this. Use only the conventional `type: subject` line and bullet body.
+Do not add `Co-Authored-By: Claude …`, `Co-Authored-By: Codex …`, or any other AI/Anthropic/OpenAI attribution trailer to git commit messages. The user explicitly rejected this. Use only the conventional `type: subject` line and bullet body.
 
 ### Markdown that will be rendered — no hard wraps
 
@@ -27,7 +27,7 @@ Does **not** apply to: source code, plain `.md` files viewed as source in a repo
 
 ### Issue workflow skills
 
-Three global skills in `~/.claude/skills/` automate the user's standard GitHub-issue workflow across all sister projects:
+Three global skills automate the user's standard GitHub-issue workflow across all sister projects (in `~/.claude/skills/` for Claude Code, reaching Codex via the `~/.agents/skills/` junction):
 
 - **`/issue-add`** — paste a rough idea/transcript; researches the codebase and files one well-formed self-contained issue (senior-dev style), labelled from the repo's existing label set, self-assigned. Creates directly, no checkpoint.
 - **`/issue-start`** — pick issue (number, or list-and-pick for `next`/no-arg), sync `main`, cut branch, load context. Mode chosen from the issue's type label: `bug`/`chore`/`documentation` → **fast mode** (build straight away); `enhancement` → **plan mode** (plan-approval gate). Override with `now` (force fast) or `plan` (force plan).
@@ -35,7 +35,7 @@ Three global skills in `~/.claude/skills/` automate the user's standard GitHub-i
 
 Both stay generic and read each project's CLAUDE.md for the gate command, ports, and tray procedure.
 
-### Spawning sub-agents — cap concurrent Opus at 3
+### Spawning sub-agents — cap concurrent Opus at 3 *(Claude Code only — skip on other agents)*
 
 When a skill or session fans out **background sub-agents that run on Opus**, keep at most **3 in flight** at once (a sliding window): dispatch up to 3, and each time one returns, dispatch the next pending one until the queue drains. Fewer than 3 pending → just spawn that many (1 item = 1 agent). Every fleet fan-out skill — `audit-fleet`, `cleanup-fleet`, `issue-batch` — references this cap rather than re-hardcoding the number, so the limit lives in exactly one place.
 
@@ -104,9 +104,9 @@ When a downstream app needs Claude/local-LLM access, route through the hub via s
 
 ## Recurring gotchas
 
-### Git Bash strips backslashes in `settings.json` commands
+### Git Bash strips backslashes in `settings.json` commands *(Claude Code only — skip on other agents)*
 
-Claude Code on this Windows machine executes `settings.json` commands (statusLine, hooks) through **Git Bash**, not cmd or PowerShell directly. Git Bash treats `\` as an escape character, so any Windows path in a command string must use **forward slashes** — `C:/Windows/...`, not `C:\Windows\...` — or bash strips the backslashes (`C:\Windows` → `C:Windows`) and the command silently fails.
+Claude Code on this Windows machine executes `settings.json` commands (statusLine, hooks) through **Git Bash**, not cmd or PowerShell directly. Git Bash treats `\` as an escape character, so any Windows path in a command string must use **forward slashes** — `C:/Windows/...`, not `C:\Windows\...` — or bash strips the backslashes (`C:\Windows` → `C:Windows`) and the command silently fails. (Codex does **not** route hooks through Git Bash — its `hooks.json` command paths may safely use backslashes, which is why the two agents share the same `run-hook.ps1` shim but wire it up through different config files.)
 
 Working statusLine / hook command form (in `settings.json`):
 
@@ -114,10 +114,10 @@ Working statusLine / hook command form (in `settings.json`):
 C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/<script>.ps1
 ```
 
-Related sub-gotchas:
+### Windows PowerShell in spawned commands (any agent)
 
-- **Avoid `pwsh`** in spawned commands. The default `pwsh` on PATH is a WindowsApps execution alias (a 0-byte reparse stub) that fails when spawned non-interactively. Use the absolute Windows PowerShell 5.1 path above instead.
-- **PowerShell scripts that read Claude Code's stdin JSON** should use `[Console]::In.ReadToEnd()` — `$input` is unreliable across the bash → powershell.exe pipe.
+- **Avoid `pwsh`** in spawned commands. The default `pwsh` on PATH is a WindowsApps execution alias (a 0-byte reparse stub) that fails when spawned non-interactively. Use the absolute Windows PowerShell 5.1 path (`C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`) instead.
+- **PowerShell scripts that read the agent's stdin JSON** (hooks on either agent) should use `[Console]::In.ReadToEnd()` — `$input` is unreliable across the shell → powershell.exe pipe.
 - **Avoid arithmetic-vs-string ambiguity in PowerShell.** `[math]::Round(x) + '%'` is parsed as arithmetic and throws on `'%'`; cast first: `[string][math]::Round(x) + '%'`.
 
 ### PYTHONPATH for out-of-tree Python scripts

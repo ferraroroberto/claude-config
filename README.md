@@ -39,12 +39,12 @@ Beyond the issue-workflow trio (`/issue-add`, `/issue-start`, `/issue-finish`) a
 claude-config/
 ├── README.md
 ├── CLAUDE.md                       # short — tells future-Claude how this repo works
-├── global-CLAUDE.md                # exposed as ~/.claude/CLAUDE.md (symlink) — user-scope global instructions
-├── statusline-command.ps1          # exposed as ~/.claude/statusline-command.ps1 (symlink) — custom statusline
+├── global-CLAUDE.md                # exposed as ~/.claude/CLAUDE.md AND ~/.codex/AGENTS.md (symlinks) — agent-neutral global instructions
+├── statusline-command.ps1          # exposed as ~/.claude/statusline-command.ps1 (symlink) — custom statusline (Claude only)
 ├── .gitignore
-├── install.ps1                     # creates junctions/symlinks: ~/.claude/<name> → repo/<name>
-├── uninstall.ps1                   # removes only the links install.ps1 created, leaves ~/.claude/ otherwise untouched
-├── hooks/                          # junction → ~/.claude/hooks
+├── install.ps1                     # creates junctions/symlinks into three homes: ~/.claude, ~/.agents, ~/.codex
+├── uninstall.ps1                   # removes only the links install.ps1 created, leaves the homes otherwise untouched
+├── hooks/                          # junction → ~/.claude/hooks AND ~/.codex/hooks (Codex)
 │   ├── _lib.py                     # shared: project detection, port→PID, stdin-JSON, projects.toml loader
 │   ├── projects.toml               # per-project nuance (ports, gate triggers, never-kill ports)
 │   ├── pre_commit_no_ai_trailer.py + .ps1 shim
@@ -55,11 +55,12 @@ claude-config/
 │   ├── notify_on_idle.py            # Notification hook (via run-hook.ps1): opt-in Slack ping
 │   ├── slack_notify.py              # shared Slack-notify transport (importable + CLI, stdlib-only)
 │   └── notify_complete.py           # deterministic skill-completion ping (issue-* skills call this)
-├── commands/                       # junction → ~/.claude/commands (slash commands)
+├── commands/                       # junction → ~/.claude/commands AND ~/.codex/prompts (Codex prompts)
 ├── skills/                         # junction → ~/.claude/skills AND ~/.agents/skills (Codex) — issue-* workflow, handoff-commit, codebase-audit, screen, …
 ├── docs/slack-workflow.md          # Slack ↔ Claude reference: bot helper, session hook, native integration
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
-└── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json
+├── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json (Claude)
+└── codex-hooks.json                # exposed as ~/.codex/hooks.json (symlink) — Codex's hooks wiring (same run-hook.ps1 shim)
 ```
 
 The live `~/.claude/settings.json` is **not** in this repo — it carries machine-local permissions and secrets. Only `settings.template.json` ships, showing the `hooks` block to copy in.
@@ -74,10 +75,27 @@ cd claude-config
 .\install.ps1
 ```
 
-`install.ps1` exposes the repo's contents inside `~/.claude/` via three link kinds:
+`install.ps1` exposes the repo's contents inside **three homes** — `~/.claude` (Claude Code), `~/.agents` (the cross-agent skills location), and `~/.codex` ([Codex](https://developers.openai.com/codex/)'s own home) — via two link kinds:
 
-- **Junctions** for the directory entries (`hooks/`, `commands/`, `skills/`). Cross-volume OK, no admin. `skills/` is junctioned into **two** homes: `~/.claude/skills` (Claude Code) and `~/.agents/skills` (the cross-agent location [Codex](https://developers.openai.com/codex/) reads), so both agents load the *same live files* and the skill set can never drift between them.
-- **Symlinks** for the single-file entries (`global-CLAUDE.md` → `~/.claude/CLAUDE.md`, `statusline-command.ps1`). Cross-volume file linking on Windows requires admin or Developer Mode, so the installer self-elevates with **one UAC prompt** the first time it needs to create them. Reinstalls that find the symlinks already in place stay UAC-free.
+- **Junctions** for the directory entries. Cross-volume OK, no admin. `hooks/` and `commands/` are each junctioned into **both** `~/.claude` and `~/.codex`, and `skills/` into `~/.claude/skills` + `~/.agents/skills` — so both agents load the *same live files* and nothing can drift between them.
+- **Symlinks** for the single-file entries (`global-CLAUDE.md` → both `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`; `codex-hooks.json` → `~/.codex/hooks.json`; `statusline-command.ps1`). Cross-volume file linking on Windows requires admin or Developer Mode, so the installer self-elevates with **one UAC prompt** the first time it needs to create them. Reinstalls that find the symlinks already in place stay UAC-free.
+
+### Codex parity — one source, both agents
+
+The same files drive Claude Code and Codex; editing once is live in both. The seams:
+
+| What | Claude Code | Codex | Link |
+|---|---|---|---|
+| Global instructions | `~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md` | symlink → `global-CLAUDE.md` |
+| Hooks (code) | `~/.claude/hooks/` | `~/.codex/hooks/` | junction → `hooks/` |
+| Hooks (wiring) | `settings.json` (merge `settings.template.json`) | `~/.codex/hooks.json` | symlink → `codex-hooks.json` |
+| Skills | `~/.claude/skills/` | `~/.agents/skills/` | junction → `skills/` |
+| Slash commands / prompts | `~/.claude/commands/` | `~/.codex/prompts/` | junction → `commands/` |
+| Statusline | `~/.claude/statusline-command.ps1` | *(no equivalent)* | Claude only |
+
+`global-CLAUDE.md` is **agent-neutral**: it reads correctly as either file, and the few genuinely Claude-specific sections (the 3-wide Opus sub-agent cap; the Git-Bash-strips-backslashes-in-`settings.json` gotcha) are marked *(Claude Code only — skip on other agents)*. Unlike Claude's `settings.json` (which mixes in machine-local secrets and so stays a manual merge), Codex's `hooks.json` is hooks-only, so it is symlinked live from `codex-hooks.json` — the same `run-hook.ps1` shim runs on both agents (Codex does **not** route hooks through Git Bash, so its command paths may use backslashes).
+
+**Validated:** Codex (gpt-5.5) loads and runs these skills live — e.g. invoking the `screen` skill executed `skills/screen/SKILL.md` straight from the repo. One Codex-vs-Claude nuance: Codex's client only treats a message as a slash command when the *whole* message is a registered client command, so a bare `/screen` line is rejected by the client — invoke a skill mid-message (`check this /screen 3`) or in natural language (`run the codebase audit`) and it fires.
 
 Edits on either side are visible on the other instantly — no copy step, no sync ritual. The installer is idempotent:
 - existing link pointing at the repo → no-op
@@ -106,6 +124,20 @@ Move-Item $env:USERPROFILE\.agents\skills $env:USERPROFILE\.agents\skills.old
 # verify ~/.agents/skills resolves to the repo, then:
 Remove-Item $env:USERPROFILE\.agents\skills.old -Recurse -Force
 ```
+
+Same for `~/.codex` if Codex was bootstrapped with hand-copied files (a real `AGENTS.md`, a real `hooks/` dir, a hand-written `hooks.json`). The installer refuses to clobber real files, so move them aside, install, then delete:
+
+```powershell
+Move-Item $env:USERPROFILE\.codex\AGENTS.md  $env:USERPROFILE\.codex\AGENTS.md.old
+Move-Item $env:USERPROFILE\.codex\hooks      $env:USERPROFILE\.codex\hooks.old
+Move-Item $env:USERPROFILE\.codex\hooks.json $env:USERPROFILE\.codex\hooks.json.old
+.\install.ps1   # one UAC prompt for the AGENTS.md + hooks.json symlinks; the hooks/ + prompts/ junctions need none
+# verify ~/.codex/AGENTS.md, hooks/, prompts/, hooks.json all resolve to the repo, then:
+Remove-Item $env:USERPROFILE\.codex\AGENTS.md.old, $env:USERPROFILE\.codex\hooks.json.old -Force
+Remove-Item $env:USERPROFILE\.codex\hooks.old -Recurse -Force
+```
+
+Keeping `codex-hooks.json` byte-identical to the `hooks.json` Codex already trusts means the symlink swap doesn't re-trigger Codex's hook-trust prompt.
 
 ## Uninstall
 

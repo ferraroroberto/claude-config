@@ -34,14 +34,17 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot       = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ClaudeHome     = Join-Path $env:USERPROFILE '.claude'
 $AgentsHome     = Join-Path $env:USERPROFILE '.agents'
+$CodexHome      = Join-Path $env:USERPROFILE '.codex'
 $ManifestPath   = Join-Path $ClaudeHome '.claude-config-installed.json'
 
 # Link targets live under a base home. 'claude' (default) -> ~/.claude; 'agents' -> ~/.agents
-# (the cross-agent skills location Codex reads). Keep targets base-relative so one repo
-# source can be linked into more than one home.
+# (the cross-agent skills location Codex reads); 'codex' -> ~/.codex (Codex's own home, for
+# AGENTS.md, hooks/, prompts/, hooks.json). Keep targets base-relative so one repo source can
+# be linked into more than one home.
 function Get-BaseHome([string]$base) {
     switch ($base) {
         'agents' { $AgentsHome }
+        'codex'  { $CodexHome }
         default  { $ClaudeHome }
     }
 }
@@ -57,12 +60,18 @@ $Items = @(
     @{ kind = 'junction'; source = 'hooks';                  target = 'hooks' },
     @{ kind = 'junction'; source = 'commands';               target = 'commands' },
     @{ kind = 'junction'; source = 'skills';                 target = 'skills' },
-    @{ kind = 'junction'; source = 'skills';                 target = 'skills'; base = 'agents' },
+    @{ kind = 'junction'; source = 'skills';                 target = 'skills';                 base = 'agents' },
     @{ kind = 'symlink';  source = 'statusline-command.ps1'; target = 'statusline-command.ps1' },
-    @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'CLAUDE.md' }
+    @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'CLAUDE.md' },
+    # Codex (~/.codex): mirror the same source files into Codex's own home so editing once is
+    # live in both agents. Skills already reach Codex via the ~/.agents/skills junction above.
+    @{ kind = 'junction'; source = 'hooks';                  target = 'hooks';                  base = 'codex' },
+    @{ kind = 'junction'; source = 'commands';               target = 'prompts';                base = 'codex' },
+    @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'AGENTS.md';              base = 'codex' },
+    @{ kind = 'symlink';  source = 'codex-hooks.json';       target = 'hooks.json';             base = 'codex' }
 )
 
-foreach ($baseDir in @($ClaudeHome, $AgentsHome)) {
+foreach ($baseDir in @($ClaudeHome, $AgentsHome, $CodexHome)) {
     if (-not (Test-Path $baseDir)) {
         New-Item -ItemType Directory -Path $baseDir | Out-Null
     }
