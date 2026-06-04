@@ -347,8 +347,46 @@ Upsert the per-repo ledger issue so the next run can short-circuit at step 2:
     --title "codebase-audit ledger" --body-file <tmpfile>
   ```
 
+  Capture the ledger issue URL the helper prints — the snapshot comment below
+  posts to it.
+
 - This runs on **every** non-skipped path — including a clean pass that filed
   zero issues — so an unchanged repo is correctly skipped next time.
+
+Then **post one per-category snapshot comment** on the ledger issue — an
+append-only telemetry log so a reader who opens the ledger sees the *trajectory*
+of findings per repo, not just the last sweep's date. The comment carries
+**counts only** (never finding text — the bucket issues from step 8 are the
+single source of truth for *what* was found; this is *how many*, per category).
+Because it lives in a comment, it stays off the step-2 gate's hot path, which
+only ever reads the ledger *body*:
+
+- Use the per-bucket **findings-surfaced-this-run** counts — the exact same
+  numbers as the step-10 summary table's `findings` column. No recomputation.
+- Build a small **standalone** markdown table (header + separator + one data
+  row, so it renders on its own), prefixed with the hidden `<!-- audit-snapshot -->`
+  marker so a later LLM/tool can filter snapshot comments from other ledger
+  comments. Shape (`<sha>` is `git rev-parse --short HEAD`; `total` is the sum
+  of the six buckets):
+
+  ```markdown
+  <!-- audit-snapshot -->
+  | run | sha | dup | stale | drift | maint | bug | doc | total |
+  |-----|-----|-----|-------|-------|-------|-----|-----|-------|
+  | <YYYY-MM-DD> | <sha> | 3 | 0 | 2 | 5 | 0 | 4 | 14 |
+  ```
+
+- Write it to a repo-scoped temp file (same convention as step 8, e.g.
+  `E:/tmp/audit-<owner>-<repo>-snapshot.md`) — never a fixed shared name — and
+  post it to the captured ledger URL:
+
+  ```
+  gh issue comment <ledger-url> --repo <OWNER/REPO> --body-file <tmpfile>
+  ```
+
+- **Posting the comment must never fail the run.** If `gh issue comment` errors,
+  note `snapshot: skipped (<reason>)` and carry on — the ledger body upsert
+  above is what the gate depends on; the snapshot is telemetry on top.
 
 ### 10. Final report
 
@@ -412,6 +450,13 @@ findings. Codebase passes the audit.` — and stop.
   spawned duplicates in the first place.
 - **Never auto-close or auto-tick an audit issue.** It's a living backlog;
   multiple PRs may chip at it. Closing and checking boxes are the user's call.
+- **The ledger snapshot comment is counts-only telemetry.** Step 9 posts a
+  per-category *count* row (`<!-- audit-snapshot -->`) to the ledger issue; it
+  must **never** carry finding text, file paths, or fix shapes — those live in
+  the bucket issues, the single source of truth for *what* was found. Counts are
+  derived (recomputed each run, append-only, never hand-edited), so the snapshot
+  can't drift into a second authoritative store. A comment-post failure is
+  non-fatal — never fail the run over it.
 - **Cross-issue dedupe still applies.** Drop a finding already covered by a
   *different* (hand-filed or other-bucket) open issue; record it as
   "skipped: dupe of #N".
