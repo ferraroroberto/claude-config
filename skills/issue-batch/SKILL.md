@@ -110,7 +110,7 @@ In-place mode: skip — `/issue-start` inside the sub-agent will cut the branch.
 
 ### 7. Fan out: spawn one background sub-agent per issue
 
-Spawn all sub-agents in a **single message** with multiple parallel `Agent` tool calls, each with `run_in_background: true`. Use `subagent_type: "general-purpose"` (or `"claude"`).
+Spawn one background sub-agent per issue (`run_in_background: true`, `subagent_type: "general-purpose"` or `"claude"`), but **bound the Opus concurrency**: these agents inherit the parent session's model, so when the parent is on **Opus**, dispatch them through the global Opus concurrency window (≤3 in flight — see `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3"): launch up to 3, and each time one returns dispatch the next pending issue until the batch drains. Fewer than 3 issues → just spawn that many. When the parent is on **Sonnet** the cap does not apply — spawn them all in a single message. Worktree pre-creation (step 6) already ran sequentially before any agent launches, so a windowed launch never races it.
 
 Two prompt templates — pick by isolation mode:
 
@@ -199,7 +199,7 @@ I'll report each result here as the agents complete. You don't need to wait —
 ask me anything else in the meantime.
 ```
 
-Then stop. Do not poll, do not sleep, do not check on progress — the harness re-invokes you automatically when each background agent completes.
+Then stop. Do not poll, do not sleep, do not check on progress — the harness re-invokes you automatically when each background agent completes. On Opus, when a completion frees a window slot, dispatch the next pending issue (step 7) until the batch drains.
 
 ### 9. Report each completion (as agents return)
 

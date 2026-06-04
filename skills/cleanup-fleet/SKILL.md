@@ -1,6 +1,6 @@
 ---
 name: cleanup-fleet
-description: Take one bucket of audit findings (a label like documentation, claude-md-drift, bug, …), gather every open issue carrying it across the E:\automation fleet, score each for complexity, and fan out a swarm of one background agent per repo — Sonnet for easy issues (full YOLO → merged), Opus for complex ones (build → stop for your review). The fix-half of /audit-fleet. Use when the user wants to clear a whole category of audit work in one pass — e.g. "/cleanup-fleet documentation", "/cleanup-fleet drift", "clean up all the bugs", "/cleanup-fleet docs easy".
+description: Take one bucket of audit findings (a label like documentation, claude-md-drift, bug, …), gather every open issue carrying it across the E:\automation fleet, score each for complexity, and fan out a swarm of one background agent per repo — Sonnet for easy issues (full YOLO → merged), Opus for complex ones (build → stop for your review, capped at 3 Opus agents in flight via the global Opus concurrency window). The fix-half of /audit-fleet. Use when the user wants to clear a whole category of audit work in one pass — e.g. "/cleanup-fleet documentation", "/cleanup-fleet drift", "clean up all the bugs", "/cleanup-fleet docs easy".
 ---
 
 # cleanup-fleet
@@ -122,7 +122,12 @@ No worktrees: one branch per repo means each agent works the primary checkout in
 
 ### 8. Fan out — one background sub-agent per selected issue
 
-Spawn **all** sub-agents in a **single message** with multiple parallel `Agent` calls, each `run_in_background: true`, `subagent_type: "general-purpose"`, and **`model` set per the score** — `model: "sonnet"` for easy, `model: "opus"` for complex.
+Dispatch one background sub-agent per selected issue (`run_in_background: true`, `subagent_type: "general-purpose"`, **`model` set per the score** — `model: "sonnet"` for easy, `model: "opus"` for complex), but **bound the Opus concurrency**:
+
+- **Sonnet (easy) agents are exempt** — spawn them all at once in a single message.
+- **Opus (complex) agents go through the global Opus concurrency window** (≤3 in flight — see `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3"): dispatch up to 3, and each time one returns dispatch the next pending Opus issue until the Opus queue drains. In a mixed run only Opus agents count against the window of 3; the Sonnet swarm runs alongside, uncounted. Fewer than 3 complex issues → just spawn that many.
+
+A single-message fan-out of many Opus agents at once trips Anthropic's server-side burst limit (`Server is temporarily limiting requests · Rate limited`; ceiling 3–4 per anthropics/claude-code#53922) — the same failure that cost the 2026-06-03 `/audit-fleet` run most of its repos.
 
 #### 8a. Sonnet / easy prompt
 
@@ -179,11 +184,11 @@ Substitute every `<…>` placeholder with the concrete value from steps 2–7.
 
 ### 9. Confirm fan-out and stand by
 
-Print a single confirmation block listing every sub-agent dispatched (repo, #N, model, path). Then **stop** — do not poll, sleep, or check progress. The harness re-invokes you automatically as each background agent completes.
+Print a single confirmation block listing every sub-agent dispatched (repo, #N, model, path) — and, if any complex issues are still queued behind the Opus window, note how many are pending. Then **stop** — do not poll, sleep, or check progress. The harness re-invokes you automatically as each background agent completes; on each Opus completion, refill the window with the next pending Opus issue (step 8) until the queue drains.
 
 ### 10. Aggregate as agents return, then the closing ping
 
-As each sub-agent finishes, surface its report with a status mark: `✅` merged / `❌` failed for Sonnet; `📋 ready for review` / `⚠️ verification skipped` / `❌ failed` for Opus.
+As each sub-agent finishes, surface its report with a status mark: `✅` merged / `❌` failed for Sonnet; `📋 ready for review` / `⚠️ verification skipped` / `❌ failed` for Opus. Opus reports arrive ≤3 at a time (the window); each time one lands, dispatch the next pending Opus issue per step 8 until the complex queue is drained.
 
 When **all** agents have returned, fire **one final** roll-up ping — the closing message for the run. The per-issue `🚀 Shipped` pings the Sonnet agents already fired are kept; this is *in addition*:
 
@@ -214,6 +219,7 @@ No follow-up actions. The user reviews + finishes each Opus branch manually with
 
 - **One agent per repo, period.** A bucket is at most one issue per repo by construction; if a repo has extras, defer them — never two agents on one checkout.
 - **Sonnet path is full-YOLO-to-merged; Opus path always stops before push/PR.** Never let an Opus agent merge; never make a Sonnet agent stop early in `hard`/`easy` mode (that's what Opus is for).
+- **Opus agents dispatch through the global Opus concurrency window (≤3 in flight); Sonnet agents are exempt.** Refill the window as each Opus agent returns; never a single-message fan-out of many Opus agents at once — it trips Anthropic's server-side burst rate limit (see `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3").
 - **easy / silent mode never spawns Opus and never merges hard-scored work.** Opus rows are listed only. This is the unattended-safety guarantee.
 - **The orchestrator never edits source, commits, pushes, or merges.** Every write happens inside a spawned agent.
 - **Never disturb in-progress work.** Dirty / off-default-branch repos are skipped and reported, never stashed or force-switched.
