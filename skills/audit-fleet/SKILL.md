@@ -315,6 +315,11 @@ One concise block: the plan line from step 3, per-repo results, where the digest
   unchanged. The gate turns an unchanged repo into one `gh` + one `git` call
   instead of a full read + a sub-agent spawn. The commit SHA is the cache key;
   the rubric hash busts the cache when the grading criteria themselves change.
+- **Per-category trend data lives in the per-repo ledger.** Each whole-repo
+  audit posts a counts-only `<!-- audit-snapshot -->` comment on that repo's
+  `codebase-audit ledger` issue (see `/codebase-audit` step 9). Open a repo's
+  ledger to read its findings trajectory over time; this fleet digest stays
+  aggregate (per-repo totals, week-over-week) by design.
 - **The weekly job** that schedules this lives in app-launcher
   (`config/jobs.json`, a `weekly` schedule, `visible: true` console) and calls a
   thin `audit-fleet.bat` wrapper in this repo. See that repo for the trigger;
