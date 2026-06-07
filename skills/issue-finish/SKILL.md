@@ -87,13 +87,23 @@ follow that procedure **exactly**. The non-negotiables:
   atomically. **Do not** hand-roll a `Get-NetTCPConnection`/`taskkill` kill:
   a by-hand kill only catches the one listener it finds and misses the orphan
   the reclaim sweep exists to kill, then re-runs a start-only script.
+- **Safety caveat — linked children.** `tray.bat --restart` does a `/T` subtree
+  kill, so it is safe only for a tray whose linked-but-independent children
+  (a session-host + its PTY-backed shells) are spawned **detached** and
+  re-adopted on start (scaffold `docs/windows-tray.md`). For a tray that still
+  hosts such children *in its subtree* (today: `app-launcher`), `--restart`
+  kills the user's open Coding sessions — and your own, if you're running inside
+  one. That tray's `CLAUDE.md` flags it: **confirm with the user first**, or use
+  its non-destructive path (kill only the webapp port, let the tray re-adopt).
 - **Fallback only** for a project with no `--restart`: kill **only** the
   specific process listening on the project's port (`Get-NetTCPConnection
   -LocalPort <port>`, stop that PID — **never** a blanket `python`/`pythonw`
   kill), then relaunch via its start script.
-- Confirm the new build is live via the project's version/health endpoint
-  (e.g. `GET /api/version`): the git SHA should match `HEAD` and the asset hash
-  should have changed. Report that build line.
+- Confirm the new build is live with a **bounded** poll of the project's
+  version endpoint (e.g. `GET /api/version`): a **hard timeout + attempt cap**
+  (≤30 s / fixed attempts), then **fail loud** — never an open-ended wait. The
+  git SHA must match `HEAD` (a `/healthz` 200 is not enough — a stale process
+  passes it) and the asset hash should have changed. Report that build line.
 
 If the project has no tray, skip this step.
 
