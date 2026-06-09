@@ -1,6 +1,6 @@
 ---
 name: issue-finish
-description: Finish a GitHub issue cleanly — confirm acceptance, update docs/README, run the verification gate, push, open a PR that closes the issue, wait for CI (skipped when the change is provably CI-unrelated), auto-merge, delete the branch, and restart the project's tray safely. Use when work on an issue branch is complete, e.g. "/issue-finish". Pairs with /issue-start.
+description: Finish a GitHub issue cleanly — confirm acceptance, update docs/README, run the verification gate, push, open a PR that closes the issue, handle CI as advisory (skip the wait when the diff touches no e2e surface; proactively rerun a documented flake once), auto-merge, delete the branch, and restart the project's tray safely. Use when work on an issue branch is complete, e.g. "/issue-finish". Pairs with /issue-start.
 ---
 
 # issue-finish
@@ -54,22 +54,44 @@ passed when there are none.
   line (what gate ran and its result), and `Closes #<N>` so the issue
   auto-closes on merge. Match the PR-body style of recent merged PRs in the repo.
 
-### 5. Merge (wait for CI unless provably unrelated)
+### 5. Merge (CI is advisory — skip the wait when it adds no signal)
 
-- **Classify the diff first.** It is **CI-unrelated** only if *every* changed
-  file is one CI never executes — `*.md`, `docs/`, `LICENSE`, images/assets, or
-  pure code-comment edits — **AND** `.github/workflows/` contains no job that
-  targets them (no markdownlint, link-checker, docs/site build). Actually read
-  the workflow files to confirm — never assume.
-- **If CI-unrelated:** skip the watch and merge immediately (next bullet). State
-  it in the summary, e.g. `CI not awaited — docs-only change, no docs CI job.`
-  If the merge is rejected because a branch-protection *required* check is still
-  pending/failing, fall back to `--watch` and proceed as below.
-- **Otherwise** (any source/test/config/dependency/build touch, or any doubt
-  about what the workflows cover): `gh pr checks <PR> --watch` — wait for all
-  required checks to go green. If a check fails, stop and report — don't merge
-  red. This skips only the *remote CI wait*; it never skips the verification
-  gate in step 2, which always runs.
+**CI is advisory, not a required gate.** The local verification gate (step 3) is
+the contract; CI is supplementary. Its **only** signal beyond the local gate is
+the **e2e suite** (the local gate skips it — it needs browsers + a live webapp),
+which is also the known-flaky leg. So a diff that touches none of the e2e surface
+gains nothing from waiting, and a wedged browser can block the merge for nothing.
+The decision below is driven by the project's `## CI expectations` block (the
+convention is `ferraroroberto/project-scaffolding#52`).
+
+- **Read the project's `## CI expectations` block in `CLAUDE.md`.** It declares
+  the workflow/job, the typical-green duration + investigate/wedged thresholds,
+  the documented flaky leg, and the **e2e surface** paths. **Absent → fall back
+  to the conservative behavior: always `--watch` (skip nothing).** Do not invent
+  thresholds or surface paths the block doesn't state.
+- **Skip-the-wait keyed on the e2e surface.** If the diff touches **none** of the
+  declared e2e-surface paths and the local gate (step 3) is green → skip the
+  watch and merge immediately. **State it** in the summary, e.g. `CI not awaited
+  — store-only diff, no e2e surface touched`. (This generalizes the old narrow
+  `*.md`-only rule: e2e is the only thing CI runs that the local gate skipped.)
+- **Otherwise watch — but proactively, not passively.** Run `gh pr checks <PR>
+  --watch`. The moment elapsed crosses the block's **investigate threshold**,
+  stop waiting passively: inspect the run (`gh run view <run-id> --job <job>`)
+  and classify **flake vs real failure**.
+  - **Real failure** (test assertion, compile/lint/type error, a leg that isn't
+    the documented flaky one) → stop and report. **Never rerun a real failure.**
+  - **Documented flaky leg wedged** (per the block — e.g. the Playwright
+    WebKit/PTY-input leg) → cancel + rerun **once** automatically, saying so
+    (`cancelled wedged <leg> run, rerunning once`). If it flakes a **second**
+    time → stop and surface it to the user; do not rerun again.
+- **Keep-control guardrails.** Always **state** the CI decision (skip vs wait,
+  plus any cancel/rerun) in the finish summary so the user can veto. Auto-rerun
+  is capped at **once** and only for the *documented* flaky leg. Nothing
+  force-merges: CI is advisory (no branch protection), so no `--admin` is ever
+  needed — but **if a repo later marks the `e2e` check *required*** in branch
+  protection, the skip-rule must **fall back to watching** (a required check
+  can't be skipped without `--admin`, which is out of scope here). This skips
+  only the *remote CI wait*; it never skips the verification gate in step 3.
 - `gh pr merge <PR> --merge --delete-branch` — merge commit; branch deleted on
   both remote and local.
 - `git checkout <main>` then `git pull --ff-only` to land the merge locally.
