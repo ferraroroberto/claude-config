@@ -17,19 +17,30 @@ Output file format:
   - Blank line, then a fenced markdown block of all user/assistant turns
     in order (verbatim — no summarising).
 
-One file per session: the ``Stop`` hook fires at every turn-end (not once per
-session), so a single session triggers several captures — e.g. a cold-start
-readiness-ack turn, then the real work. Each run derives a stable token from
-the session id, removes any earlier capture of the same session, and writes the
-latest, fullest transcript — collapsing the session to a single file. Without a
-session id we can't identify siblings, so we fall back to a plain timestamped
-name (no dedup).
+One file per conversation: the ``Stop`` hook fires at every turn-end (not once
+per session), so a single session triggers several captures — e.g. a cold-start
+readiness-ack turn, then the real work. Each run supersedes earlier captures of
+the same conversation on either of two stable identifiers and writes the latest,
+fullest transcript — collapsing the conversation to a single file:
+
+  * the **session token** (last 8 of ``session_id``) collapses turn-end captures
+    *within one session*, including the empty cold-start readiness-ack capture
+    whose first real turn hasn't appeared yet;
+  * the **content signature** (hash of the first real user turn) collapses a
+    *resumed* conversation onto its predecessor. ``claude --resume`` copies the
+    transcript forward but rewrites every entry's ``session_id`` (and message
+    ``uuid``), so the session token alone leaves a duplicate — the first real
+    user turn is the only identity that survives a resume.
+
+Without a session id *and* without a real turn we can't identify siblings, so we
+fall back to a plain timestamped name (no dedup).
 
 Invoked by the ``Stop`` hook in ``life-os/.claude/settings.json``.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -147,8 +158,14 @@ def _is_preamble(text: str) -> bool:
     return bool(_PREAMBLE_PATTERNS.search(text[:300]))
 
 
-def make_description(messages: list[tuple[str, str]]) -> str:
-    """One-line description from the first real user turn (skips skill-loading preamble)."""
+def first_real_turn(messages: list[tuple[str, str]]) -> str:
+    """Cleaned full text of the first substantive user turn, or ``""`` if none.
+
+    Skips skill-loading preamble and command-tag injections. Both the
+    description/slug and the dedup content signature key off this single turn, so
+    they always move together — and because ``claude --resume`` copies this turn
+    forward verbatim, it is the conversation's only resume-stable identity.
+    """
     for role, text in messages:
         if role != "user":
             continue
@@ -159,11 +176,19 @@ def make_description(messages: list[tuple[str, str]]) -> str:
             continue
         if _is_preamble(text):
             continue
-        if len(clean) <= 120:
-            return clean
-        cut = clean[:120].rsplit(" ", 1)[0]
-        return cut + "…"
-    return "session"
+        return clean
+    return ""
+
+
+def make_description(messages: list[tuple[str, str]]) -> str:
+    """One-line description from the first real user turn (skips skill-loading preamble)."""
+    clean = first_real_turn(messages)
+    if not clean:
+        return "session"
+    if len(clean) <= 120:
+        return clean
+    cut = clean[:120].rsplit(" ", 1)[0]
+    return cut + "…"
 
 
 def make_slug(description: str) -> str:
@@ -189,28 +214,59 @@ def session_token(session_id: str) -> str:
     return cleaned[-8:]
 
 
-def capture_filename(timestamp: str, slug: str, token: str) -> str:
-    """Build the capture filename. The session token is appended when present
-    so :func:`supersede_prior` can find and remove this session's earlier files."""
-    if token:
-        return f"{timestamp}-{slug}-{token}.md"
-    return f"{timestamp}-{slug}.md"
+def content_signature(messages: list[tuple[str, str]]) -> str:
+    """Resume-stable dedup token: a short hash of the first real user turn.
 
-
-def supersede_prior(out_dir: Path, token: str) -> None:
-    """Delete earlier captures of this session before writing the new one.
-
-    No-op without a token. Matching is by the ``-<token>.md`` suffix, so a
-    readiness-only first capture is replaced by the full final one rather than
-    left behind as a duplicate.
+    ``claude --resume`` copies that turn forward verbatim while rewriting the
+    ``session_id``, so this signature (unlike :func:`session_token`) lets a
+    resumed capture recognise and supersede its predecessor. Empty when no real
+    turn has appeared yet (a cold-start readiness-ack capture) — dedup then
+    relies on the session token alone.
     """
-    if not token:
-        return
-    for prior in out_dir.glob(f"*-{token}.md"):
-        try:
-            prior.unlink()
-        except OSError:
-            pass
+    clean = first_real_turn(messages)
+    if not clean:
+        return ""
+    return hashlib.sha1(clean.encode("utf-8")).hexdigest()[:8]
+
+
+def capture_filename(timestamp: str, slug: str, sid_token: str, sig_token: str) -> str:
+    """Build the capture filename, embedding both dedup identifiers.
+
+    The session token then the content signature are appended when present (in
+    that fixed order), so a later capture can find and supersede this file by
+    *either* identifier. With neither we fall back to a plain timestamped name.
+    """
+    suffix = "".join(f"-{t}" for t in (sid_token, sig_token) if t)
+    return f"{timestamp}-{slug}{suffix}.md"
+
+
+def supersede_prior(out_dir: Path, sid_token: str, sig_token: str) -> None:
+    """Delete earlier captures of this conversation before writing the new one.
+
+    Matches on *either* identifier so both the intra-session readiness-ack
+    capture and a prior *resumed* capture are collapsed rather than left behind:
+
+      * ``*-<sig>.md`` — the content signature is always the final segment, so
+        this catches any earlier capture of the same conversation regardless of
+        its (rewritten) session token.
+      * ``*-<sid>.md`` / ``*-<sid>-*.md`` — the session token, whether it is the
+        final segment (legacy single-token or degenerate captures) or the middle
+        one (the new two-token shape).
+
+    No-op when both tokens are empty.
+    """
+    patterns: list[str] = []
+    if sig_token:
+        patterns.append(f"*-{sig_token}.md")
+    if sid_token:
+        patterns.append(f"*-{sid_token}.md")
+        patterns.append(f"*-{sid_token}-*.md")
+    for pattern in patterns:
+        for prior in out_dir.glob(pattern):
+            try:
+                prior.unlink()
+            except OSError:
+                pass
 
 
 def render_markdown(description: str, messages: list[tuple[str, str]]) -> str:
@@ -271,11 +327,14 @@ def main() -> int:
     timestamp = datetime.now().strftime("%Y-%m-%d-%H%M")
     content = render_markdown(description, messages)
 
-    # The Stop hook fires at every turn-end, so collapse this session's earlier
-    # captures (e.g. a cold-start readiness-ack turn) into one up-to-date file.
-    token = session_token(session_id)
-    supersede_prior(out_dir, token)
-    filename = capture_filename(timestamp, slug, token)
+    # The Stop hook fires at every turn-end, so collapse this conversation's
+    # earlier captures into one up-to-date file — keyed on the session token
+    # (intra-session, incl. the cold-start readiness-ack turn) and the content
+    # signature (a resumed conversation, whose session_id has been rewritten).
+    sid_token = session_token(session_id)
+    sig_token = content_signature(messages)
+    supersede_prior(out_dir, sid_token, sig_token)
+    filename = capture_filename(timestamp, slug, sid_token, sig_token)
 
     out_path = out_dir / filename
     try:

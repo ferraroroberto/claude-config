@@ -222,9 +222,9 @@ def main() -> int:
 
 
 # Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
-# notify_complete (14) + conversation_capture (5) + restart_webapp (6) +
+# notify_complete (14) + conversation_capture (9) + restart_webapp (6) +
 # audit_issue (1).
-_UNIT_CHECK_COUNT = 40
+_UNIT_CHECK_COUNT = 44
 
 
 def _slack_notify_unit_checks() -> int:
@@ -382,12 +382,29 @@ def _conversation_capture_unit_checks() -> int:
           cc.session_token("01HNYE6TF-AbCd-1234") == "abcd1234")
     check("session_token: no id -> empty (dedup skipped)",
           cc.session_token("") == "" and cc.session_token(None) == "")
-    check("capture_filename: token appended when present",
-          cc.capture_filename("2026-06-02-2020", "day-today", "abcd1234")
+    check("capture_filename: session token only (degenerate content)",
+          cc.capture_filename("2026-06-02-2020", "day-today", "abcd1234", "")
           == "2026-06-02-2020-day-today-abcd1234.md")
-    check("capture_filename: no token -> plain timestamped name",
-          cc.capture_filename("2026-06-02-2020", "day-today", "")
+    check("capture_filename: both tokens -> session then signature",
+          cc.capture_filename("2026-06-02-2020", "day-today", "abcd1234", "cafe9999")
+          == "2026-06-02-2020-day-today-abcd1234-cafe9999.md")
+    check("capture_filename: no tokens -> plain timestamped name",
+          cc.capture_filename("2026-06-02-2020", "day-today", "", "")
           == "2026-06-02-2020-day-today.md")
+
+    # content_signature is the resume-stable identity: it keys off the first real
+    # user turn (copied forward verbatim on --resume), not the session id. So two
+    # transcripts sharing that opening turn — but with different later turns and a
+    # different session_id — hash identically; a preamble-only turn yields "".
+    preamble = ("user", "Base directory for this skill: E:/automation/life-os/x")
+    turn1 = ("user", "I want to record today's licenses and GPS for the ferry trip")
+    orig = [preamble, turn1, ("assistant", "ok")]
+    resumed = [preamble, turn1, ("assistant", "ok"),
+               ("user", "and add the return ferry time"), ("assistant", "done")]
+    check("content_signature: stable across resume (same first turn), non-empty",
+          cc.content_signature(orig) == cc.content_signature(resumed) != "")
+    check("content_signature: preamble-only turn -> empty (falls back to session token)",
+          cc.content_signature([preamble]) == "")
 
     # supersede_prior removes this session's earlier captures, leaves others.
     tmp = Path(tempfile.mkdtemp(prefix="cc_dedup_"))
@@ -395,10 +412,25 @@ def _conversation_capture_unit_checks() -> int:
         (tmp / "2026-06-02-2016-session-abcd1234.md").write_text("early", encoding="utf-8")
         (tmp / "2026-06-02-2018-other-abcd1234.md").write_text("mid", encoding="utf-8")
         (tmp / "2026-06-02-2020-real-deadbeef.md").write_text("other session", encoding="utf-8")
-        cc.supersede_prior(tmp, "abcd1234")
+        cc.supersede_prior(tmp, "abcd1234", "")
         remaining = sorted(p.name for p in tmp.iterdir())
         check("supersede_prior: drops same-session files, keeps other sessions",
               remaining == ["2026-06-02-2020-real-deadbeef.md"])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # supersede_prior on resume: the predecessor carries the SAME content
+    # signature but a DIFFERENT (now-rewritten) session token, so only the
+    # signature match collapses it. An unrelated conversation is left untouched.
+    tmp = Path(tempfile.mkdtemp(prefix="cc_resume_"))
+    try:
+        (tmp / "2026-06-05-1606-licenses-and-gps-aaaa1111-cafe9999.md").write_text("v1", encoding="utf-8")
+        (tmp / "2026-06-08-2105-other-topic-bbbb2222-dead8888.md").write_text("unrelated", encoding="utf-8")
+        # resumed capture: new session token, same content signature.
+        cc.supersede_prior(tmp, "eeee5555", "cafe9999")
+        remaining = sorted(p.name for p in tmp.iterdir())
+        check("supersede_prior: resume (new session id, same signature) drops predecessor",
+              remaining == ["2026-06-08-2105-other-topic-bbbb2222-dead8888.md"])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
