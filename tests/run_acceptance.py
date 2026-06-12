@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -217,6 +218,15 @@ def main() -> int:
         0,
     ))
 
+    # ---- session_index: opt-in gating ----
+    # A project not opted into capture must be a silent no-op (no indexer spawn).
+    cases.append((
+        "session_index: non-opted project (tempdir) -> no-op exit 0",
+        "session_index",
+        {"hook_event_name": "SessionStart", "cwd": tempfile.gettempdir()},
+        0,
+    ))
+
     failures = 0
     for name, hook, payload, expected in cases:
         code, _stdout, stderr = run(hook, payload)
@@ -238,6 +248,9 @@ def main() -> int:
     # ---- conversation_capture session-dedup logic ----
     failures += _conversation_capture_unit_checks()
 
+    # ---- conversation capture/index config-driven routing + indexing ----
+    failures += _conversation_index_unit_checks()
+
     # ---- restart_and_verify_webapp restart-strategy + recovery hint ----
     failures += _restart_webapp_unit_checks()
 
@@ -256,9 +269,9 @@ def main() -> int:
 
 
 # Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
-# notify_complete (14) + conversation_capture (13) + restart_webapp (6) +
-# audit_issue (1) + system_map (3).
-_UNIT_CHECK_COUNT = 51
+# notify_complete (14) + conversation_capture (13) + conversation_index (6) +
+# restart_webapp (6) + audit_issue (1) + system_map (3).
+_UNIT_CHECK_COUNT = 57
 
 
 def _system_map_coverage_check() -> int:
@@ -541,6 +554,68 @@ def _conversation_capture_unit_checks() -> int:
         check("supersede_prior: resume (new session id, same signature) drops predecessor",
               remaining == ["2026-06-08-2105-other-topic-bbbb2222-dead8888.md"])
     finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return failures
+
+
+def _conversation_index_unit_checks() -> int:
+    """Config-driven capture routing + the indexer's digest/upsert/decay logic.
+
+    Hermetic: the hub is stubbed, so no network is touched. Covers the opt-in
+    gate (a non-registered project captures nothing), routing resolution, and
+    the index round-trip including the preserved decay zone."""
+    sys.path.insert(0, str(HOOKS))
+    import conversation_capture as cc  # noqa: E402
+    import conversation_index as ci  # noqa: E402
+    import hub_client  # noqa: E402
+
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    # ---- config resolution / opt-in gate ----
+    lo = cc.resolve_capture_config({"cwd": "E:/automation/life-os"})
+    check("capture_config: life-os -> skills routing",
+          lo is not None and lo.routing == "skills" and lo.active_marker == ".active-skill")
+    check("capture_config: non-opted project -> None",
+          cc.resolve_capture_config({"cwd": "E:/automation/app-launcher"}) is None)
+
+    # ---- conversations_dirs: flat -> one dir labelled by project ----
+    flat = cc.CaptureConfig(root=Path(tempfile.gettempdir()) / "proj", routing="flat",
+                            conversations_dir="conversations", skills_dir=".claude/skills",
+                            active_marker=".active-skill")
+    dirs = ci.conversations_dirs(flat)
+    check("conversations_dirs: flat -> single dir labelled by project",
+          len(dirs) == 1 and dirs[0][1] == "proj")
+
+    # ---- index_dir: hermetic digest/upsert + decay-zone preservation ----
+    saved = hub_client.complete
+    ci.hub_client.complete = lambda *a, **k: "Topic: t\nDecisions: none\nOpen loops: none"
+    tmp = Path(tempfile.mkdtemp(prefix="idx_unit_"))
+    try:
+        cap = tmp / "2026-06-10-1200-foo-aaaa1111.md"
+        cap.write_text("d\n\n**You**: x\n\n**Claude**: y\n", encoding="utf-8")
+        os.utime(cap, (time.time() - 600, time.time() - 600))  # settled
+        n = ci.index_dir(tmp, "t")
+        idx = (tmp / "index.md").read_text(encoding="utf-8")
+        check("index_dir: writes one <!-- idx --> entry",
+              n == 1 and "<!-- idx" in idx and "**Topic:**" in idx)
+        check("index_dir: idempotent re-run -> 0", ci.index_dir(tmp, "t") == 0)
+        with open(tmp / "index.md", "a", encoding="utf-8") as fh:
+            fh.write("\n" + ci.DECAY_MARKER + "\n### 2026-04 · period\n- squashed\n")
+        cap2 = tmp / "2026-06-11-1300-bar-bbbb2222.md"
+        cap2.write_text("d\n\n**You**: x\n\n**Claude**: y\n", encoding="utf-8")
+        os.utime(cap2, (time.time() - 600, time.time() - 600))
+        ci.index_dir(tmp, "t")
+        check("index_dir: decay zone preserved across re-index",
+              "squashed" in (tmp / "index.md").read_text(encoding="utf-8"))
+    finally:
+        ci.hub_client.complete = saved
         shutil.rmtree(tmp, ignore_errors=True)
 
     return failures
