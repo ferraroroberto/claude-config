@@ -139,6 +139,9 @@ cwd_prefix = "E:/automation/vibe-coding-workshop"
 [website]
 cwd_prefix = "E:/automation/website"
 
+[whatsapp-radar]
+cwd_prefix = "E:/automation/whatsapp-radar"
+
 # Sister hubs that MUST survive every port-scoped kill, fleet-wide.
 # 8000  = local-llm-hub FastAPI hub
 # 8090  = whisper-server (voice-transcriber)

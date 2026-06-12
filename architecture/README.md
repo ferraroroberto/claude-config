@@ -8,7 +8,7 @@ Self-portrait of the whole `E:/automation` fleet. Tracked in #94 — **design it
 
 A **light-theme, horizontal, Janis-style** infographic — grouped zone panels, every project a card with a one-line description. Built as **hand-authored HTML/CSS**, chosen over Mermaid so each block carries real text and the layout is fully controlled.
 
-**Replicable by design:** the template and the data are separate. All content lives in one `const DATA = {…}` object near the bottom of `system-map.html` (governance / access / edge / compute / enabling / web / pipe / external + principles); the CSS + a small `render()` lay it out. Updating the map = edit the data object — the `/system-map` skill will populate it from `hooks/projects.toml` (membership + the `architecture_ignore` list), each repo's README/CLAUDE.md (descriptions), and `ARCHITECTURE.md` (layer assignment).
+**Single source of truth:** all map content lives in **`fleet.data.js`** (`window.FLEET = { …strict JSON… }`: governance / access / edge / compute / enabling / web / pipe / external + principles). `system-map.html` is a pure renderer that reads it (CSS + a small `render()`); it holds no data of its own. The body is strict JSON on purpose so Python reads it too — the `/system-map` skill regenerates it from `hooks/projects.toml` (membership + `architecture_ignore`), each repo's README/CLAUDE.md (descriptions), and `ARCHITECTURE.md` (layers), and `tests/run_acceptance.py` asserts the fleet, the data file, and the doc never drift apart.
 
 ### Local specs — kept out of git 🔒
 
