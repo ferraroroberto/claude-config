@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<style>
+  :root{
+    --ink:#1f2937; --muted:#6b7280; --faint:#9ca3af;
+    --canvas:#eef1f5; --card:#ffffff; --line:#e5e7eb;
+    --access:#0284c7; --access-bg:#e0f2fe;
+    --edge:#0d9488;   --edge-bg:#ccfbf1;
+    --pc:#475569;     --pc-bg:#f1f5f9;
+    --enable:#4f46e5; --enable-bg:#e8e9ff;
+    --web:#059669;    --web-bg:#d8f5e8;
+    --pipe:#d97706;   --pipe-bg:#fdf0d8;
+    --gov:#b91c1c;    --gov-bg:#fde8e8;
+    --ext:#475569;    --ext-bg:#eef2f7;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--canvas);color:var(--ink);
+    font-family:"Segoe UI",Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  #page{width:1760px;padding:34px 40px 30px;}
+  /* header */
+  header{display:flex;align-items:baseline;gap:16px;margin-bottom:4px;}
+  h1{font-size:30px;margin:0;letter-spacing:-.4px;}
+  .crumb{color:var(--faint);font-size:15px;}
+  .stamp{margin-left:auto;color:var(--faint);font-size:13px;}
+  .lede{color:var(--muted);font-size:15px;margin:0 0 18px;}
+  /* zone shell */
+  .zone{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04);padding:12px 14px;}
+  .zlabel{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;
+    letter-spacing:.7px;text-transform:uppercase;color:var(--muted);margin:0 0 10px;}
+  .zlabel .dot{width:9px;height:9px;border-radius:50%;}
+  .zlabel .sub{font-weight:600;letter-spacing:.2px;text-transform:none;color:var(--faint);}
+  /* generic card */
+  .card{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:#fff;}
+  .card .nm{font-weight:650;font-size:13.5px;display:flex;align-items:center;gap:6px;}
+  .card .ds{color:var(--muted);font-size:11.5px;line-height:1.38;margin-top:3px;}
+  .port{font:600 10.5px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+    color:var(--enable);background:var(--enable-bg);padding:2px 5px;border-radius:5px;margin-left:auto;}
+  .tag{font-size:10px;color:var(--faint);margin-top:5px;display:inline-block;}
+  .tag b{color:var(--muted);font-weight:600;}
+  /* main 3-column flow */
+  .flow{display:flex;align-items:stretch;gap:14px;}
+  .rail{width:236px;flex:0 0 236px;display:flex;flex-direction:column;gap:14px;}
+  .center{flex:1;display:flex;flex-direction:column;gap:0;}
+  .arrowcol{flex:0 0 30px;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;color:var(--faint);}
+  .arrowcol .a{font-size:26px;line-height:1;}
+  .arrowcol .al{font-size:9.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+    writing-mode:vertical-rl;transform:rotate(180deg);margin-top:7px;color:var(--faint);}
+  /* rail mini cards */
+  .mini{display:flex;gap:9px;align-items:flex-start;padding:8px 9px;}
+  .mini .ic{font-size:16px;line-height:1.1;}
+  /* PC container */
+  .pc{border:1px solid #cbd5e1;border-radius:16px;background:var(--pc-bg);
+    padding:13px 14px 14px;display:flex;flex-direction:column;gap:12px;height:100%;}
+  .pc-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .pc-title{font-size:13px;font-weight:750;letter-spacing:.3px;color:#334155;text-transform:uppercase;}
+  .pc-note{font-size:11.5px;font-style:italic;color:var(--muted);margin:-2px 0 2px;line-height:1.4;}
+  .pc-note b{font-style:normal;color:#475569;}
+  .spec{font:600 11px/1 ui-monospace,Menlo,monospace;color:#475569;background:#fff;
+    border:1px solid var(--line);border-radius:6px;padding:4px 7px;}
+  /* enabling row */
+  .enable-row{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;}
+  .ecard{border:1px solid #d6d8f5;border-left:4px solid var(--enable);border-radius:10px;
+    background:#fff;padding:10px 12px;}
+  .ecard .nm{font-size:14.5px;}
+  .ecard .ds{font-size:12px;min-height:32px;}
+  .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px;}
+  .chip{font:600 9.5px/1 ui-monospace,Menlo,monospace;color:#3730a3;background:#eef0ff;
+    border:1px solid #e0e3fb;border-radius:5px;padding:3px 5px;}
+  /* builds-on divider */
+  .builds{display:flex;align-items:center;gap:10px;color:var(--faint);
+    font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;margin:1px 0;}
+  .builds::before,.builds::after{content:"";flex:1;height:1px;background:var(--line);}
+  /* working zone */
+  .work{background:#fff;border:1px solid var(--line);border-radius:12px;padding:11px 12px;}
+  .work .grp+.grp{margin-top:11px;}
+  .grp-label{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+    color:var(--muted);margin:0 0 8px;display:flex;align-items:center;gap:7px;}
+  .grp-label .bar{width:14px;height:3px;border-radius:2px;}
+  .wgrid{display:grid;gap:9px;}
+  .wgrid.web{grid-template-columns:repeat(4,1fr);}
+  .wgrid.pipe{grid-template-columns:repeat(5,1fr);}
+  .wcard{border:1px solid var(--line);border-top:3px solid var(--web);border-radius:9px;
+    padding:8px 10px;background:#fff;}
+  .wcard.p{border-top-color:var(--pipe);}
+  .wcard .nm{font-size:12px;}
+  .wcard .ds{font-size:10.5px;margin-top:2px;}
+  /* governance band */
+  .gov{margin-bottom:14px;border-color:#f0c9c9;background:linear-gradient(0deg,#fff,#fff);}
+  .gov .row{display:flex;gap:12px;align-items:stretch;}
+  .gov .gcard{flex:1;border:1px solid #f0d2d2;border-left:4px solid var(--gov);border-radius:10px;
+    padding:9px 12px;background:#fffafa;}
+  .gov .gcard .nm{font-size:13.5px;}
+  /* external rail pills */
+  .epill{display:flex;gap:9px;align-items:flex-start;padding:8px 9px;border:1px solid var(--line);
+    border-radius:9px;background:#fff;}
+  .epill+.epill{margin-top:8px;}
+  .epill .ic{font-size:15px;}
+  .epill .nm{font-weight:650;font-size:12.5px;}
+  .epill .fr{font-size:10px;color:var(--faint);margin-top:1px;}
+  /* footer */
+  .foot{display:flex;gap:22px;align-items:center;flex-wrap:wrap;margin-top:16px;
+    padding-top:13px;border-top:1px solid var(--line);font-size:11.5px;color:var(--muted);}
+  .foot .pr{display:flex;gap:6px;align-items:center;}
+  .foot b{color:var(--ink);}
+</style>
+</head>
+<body>
+<div id="page">
+  <header>
+    <h1>🛠️ Roberto&rsquo;s System</h1>
+    <span class="crumb">architecture · home-PC fleet</span>
+    <span class="stamp" id="stamp"></span>
+  </header>
+  <p class="lede">One Windows&nbsp;11 PC is the whole server — reached phone-first over Tailscale &amp; Cloudflare, driving a local-LLM hub and 25+ repos. Each layer builds on the one below.</p>
+
+  <!-- GOVERNANCE BAND -->
+  <div class="zone gov">
+    <div class="zlabel"><span class="dot" style="background:var(--gov)"></span>Governance <span class="sub">— sits on top, keeps the whole fleet consistent</span></div>
+    <div class="row" id="gov"></div>
+  </div>
+
+  <!-- MAIN FLOW -->
+  <div class="flow">
+    <!-- LEFT RAIL: access + edge -->
+    <div class="rail">
+      <div class="zone" style="border-color:#bae6fd">
+        <div class="zlabel"><span class="dot" style="background:var(--access)"></span>Access <span class="sub">— how I reach it</span></div>
+        <div id="access"></div>
+      </div>
+      <div class="zone" style="border-color:#99f6e4">
+        <div class="zlabel"><span class="dot" style="background:var(--edge)"></span>Network edge</div>
+        <div id="edge"></div>
+      </div>
+    </div>
+
+    <div class="arrowcol"><div class="a">→</div><div class="al">reach the PC</div></div>
+
+    <!-- CENTER: the PC -->
+    <div class="center">
+      <div class="pc">
+        <div class="pc-head">
+          <span class="pc-title">🖥️ The PC — one box, all local</span>
+          <span class="spec" id="sp-gpu"></span>
+          <span class="spec" id="sp-cpu"></span>
+          <span class="spec" id="sp-ram"></span>
+        </div>
+        <div class="pc-note"><b>Local by choice.</b> Could run on a remote VPS — but it's all my data, connected to everything and made private by <b>Tailscale</b>. For now I keep it here, with backups.</div>
+        <!-- enabling -->
+        <div>
+          <div class="zlabel" style="margin-bottom:8px"><span class="dot" style="background:var(--enable)"></span>Enabling meta-tools <span class="sub">— shared; used by more than one app</span></div>
+          <div class="enable-row" id="enable"></div>
+        </div>
+        <div class="builds">▲ &nbsp;built on&nbsp; ▲</div>
+        <!-- working -->
+        <div class="work">
+          <div class="grp">
+            <div class="grp-label"><span class="bar" style="background:var(--web)"></span>Working apps — web apps &amp; tools</div>
+            <div class="wgrid web" id="web"></div>
+          </div>
+          <div class="grp">
+            <div class="grp-label"><span class="bar" style="background:var(--pipe)"></span>Working apps — pipelines &amp; batch</div>
+            <div class="wgrid pipe" id="pipe"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrowcol"><div class="a">→</div><div class="al">APIs out</div></div>
+
+    <!-- RIGHT RAIL: external -->
+    <div class="rail" style="width:222px;flex-basis:222px">
+      <div class="zone" style="height:100%">
+        <div class="zlabel"><span class="dot" style="background:var(--ext)"></span>External <span class="sub">— from apps &amp; orchestration</span></div>
+        <div id="external"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<!-- Data + local overrides as plain <script> includes (work under file://,
+     no CORS unlike fetch()). fleet.data.js is the SINGLE SOURCE OF TRUTH;
+     system-map.local.js (gitignored) supplies real specs, else placeholders. -->
+<script src="fleet.data.js"></script>
+<script src="system-map.local.js"></script>
+<script>
+const DATA = window.FLEET || {};
+
+const el=(h)=>{const d=document.createElement("template");d.innerHTML=h.trim();return d.content.firstChild;};
+const mini=(x)=>`<div class="card mini"><div class="ic">${x.ic}</div><div><div class="nm">${x.nm}</div><div class="ds">${x.ds}</div></div></div>`;
+
+// governance
+document.getElementById("gov").innerHTML = DATA.governance.map(g=>
+  `<div class="gcard"><div class="nm">${g.ic} ${g.nm}</div><div class="ds">${g.ds}</div></div>`).join("");
+// access / edge
+document.getElementById("access").innerHTML = DATA.access.map(mini).join("");
+document.getElementById("edge").innerHTML = DATA.edge.map(mini).join("");
+// specs — merge gitignored local overrides (real specs) over the placeholders.
+// `?placeholders=1` forces placeholders even when system-map.local.js is present,
+// so the committed PNG never bakes in real specs (used by the /system-map skill).
+const forcePH = new URLSearchParams(location.search).has("placeholders");
+const compute = Object.assign({}, DATA.compute, (!forcePH && window.LOCAL && window.LOCAL.compute) || {});
+document.getElementById("sp-gpu").innerHTML=compute.gpu;
+document.getElementById("sp-cpu").innerHTML=compute.cpu;
+document.getElementById("sp-ram").innerHTML=compute.ram;
+// enabling
+document.getElementById("enable").innerHTML = DATA.enabling.map(e=>{
+  const chips = e.chips? `<div class="chips">${e.chips.map(c=>`<span class="chip">${c}</span>`).join("")}</div>`:"";
+  return `<div class="ecard"><div class="nm">${e.ic} ${e.nm}<span class="port">${e.port}</span></div><div class="ds">${e.ds}</div>${chips}</div>`;
+}).join("");
+// working
+const wcard=(x,cls)=>{
+  const t = x.tag? `<span class="tag"><b>${x.tag[0]}</b> ${x.tag[1]}</span>`:"";
+  return `<div class="wcard ${cls}"><div class="nm">${x.ic} ${x.nm}</div><div class="ds">${x.ds}</div>${t}</div>`;
+};
+document.getElementById("web").innerHTML = DATA.web.map(x=>wcard(x,"")).join("");
+document.getElementById("pipe").innerHTML = DATA.pipe.map(x=>wcard(x,"p")).join("");
+// external
+document.getElementById("external").innerHTML = DATA.external.map(x=>
+  `<div class="epill"><div class="ic">${x.ic}</div><div><div class="nm">${x.nm}</div><div class="fr">${x.fr}</div></div></div>`).join("");
+// footer
+document.getElementById("foot").innerHTML = DATA.principles.map(p=>
+  `<span class="pr">●&nbsp;<b>${p[0]}</b> — ${p[1]}</span>`).join("");
+document.getElementById("stamp").textContent = new Date().toISOString().slice(0,10);
+document.title="RENDER_DONE";
+console.error("DIMS " + Math.ceil(document.getElementById("page").scrollWidth) + " " + Math.ceil(document.getElementById("page").scrollHeight));
+</script>
+</body>
+</html>

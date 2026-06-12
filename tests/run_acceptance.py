@@ -244,6 +244,9 @@ def main() -> int:
     # ---- audit_issue helper pure-logic tests (skills/_lib) ----
     failures += _audit_issue_unit_check()
 
+    # ---- system-map: fleet ↔ data ↔ doc coverage (architecture/) ----
+    failures += _system_map_coverage_check()
+
     # Cleanup
     shutil.rmtree(tmp, ignore_errors=True)
 
@@ -254,8 +257,59 @@ def main() -> int:
 
 # Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
 # notify_complete (14) + conversation_capture (13) + restart_webapp (6) +
-# audit_issue (1).
-_UNIT_CHECK_COUNT = 48
+# audit_issue (1) + system_map (3).
+_UNIT_CHECK_COUNT = 51
+
+
+def _system_map_coverage_check() -> int:
+    """The system map must cover exactly the fleet, and the doc must agree.
+
+    Guards the `/system-map` single source of truth (architecture/fleet.data.js)
+    against drift, mechanically:
+      1. every fleet repo (projects.toml − [global] architecture_ignore) appears
+         on the map;
+      2. no map entry is a stale/typo'd repo absent from the fleet;
+      3. every mapped repo also appears in ARCHITECTURE.md (data ↔ doc agree).
+    Returns the failure count.
+    """
+    import json
+    import tomllib
+
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    arch = REPO / "architecture"
+    toml = tomllib.loads((REPO / "hooks" / "projects.toml").read_text(encoding="utf-8"))
+    ignore = set(toml.get("global", {}).get("architecture_ignore", []))
+    fleet = {
+        name for name, tbl in toml.items()
+        if name != "global" and isinstance(tbl, dict) and "cwd_prefix" in tbl
+    } - ignore
+
+    # fleet.data.js holds `window.FLEET = { ...strict JSON... };` — slice the object out.
+    raw = (arch / "fleet.data.js").read_text(encoding="utf-8")
+    data = json.loads(raw[raw.index("{"): raw.rindex("}") + 1])
+    mapped = {
+        e.get("repo", e["nm"])
+        for section in ("governance", "enabling", "web", "pipe")
+        for e in data.get(section, [])
+    }
+
+    missing = fleet - mapped
+    stale = mapped - fleet
+    check(f"system_map: every fleet repo is on the map (missing: {sorted(missing) or 'none'})", not missing)
+    check(f"system_map: no stale map entries (stale: {sorted(stale) or 'none'})", not stale)
+
+    doc = (arch / "ARCHITECTURE.md").read_text(encoding="utf-8")
+    doc_missing = sorted(r for r in mapped if r not in doc)
+    check(f"system_map: every mapped repo is in ARCHITECTURE.md (missing: {doc_missing or 'none'})", not doc_missing)
+
+    return failures
 
 
 def _slack_notify_unit_checks() -> int:
