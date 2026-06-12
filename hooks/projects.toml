@@ -104,7 +104,15 @@ cwd_prefix = "E:/automation/illustration-color-edit"
 cwd_prefix = "E:/automation/inspiration-system"
 
 [life-os]
-cwd_prefix = "E:/automation/life-os"
+cwd_prefix      = "E:/automation/life-os"
+# Conversation capture + index (conversation_capture / session_index hooks).
+# capture_routing = "skills": per-skill conversations/ dirs under skills_dir,
+# routed by the active_marker a skill's Step 0 writes. (Omit `capture` to opt out;
+# capture_routing defaults to "flat" — one conversations/ + index.md per project.)
+capture         = true
+capture_routing = "skills"
+skills_dir      = ".claude/skills"
+active_marker   = ".active-skill"
 
 [mass-html-to-markdown]
 cwd_prefix = "E:/automation/mass-html-to-markdown"

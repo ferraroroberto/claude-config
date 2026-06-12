@@ -1,15 +1,20 @@
-"""Stop hook — capture a finished life-os skill session as a markdown file.
+"""Stop hook — capture a finished Claude Code session as a markdown file.
 
-Fires when a Claude Code session ends (``Stop`` event). Reads the JSONL
-transcript, determines which life-os skill was active, and writes a
-``YYYY-MM-DD-HHMM-<slug>.md`` file into that skill's ``conversations/`` dir.
+Generic + ``projects.toml``-driven (CLAUDE.md: hooks stay generic, project
+quirks live in the registry). Fires on every ``Stop`` event; detects the
+session's project by ``cwd`` and captures only if that project opted in with
+``capture = true``. Otherwise it's a silent no-op. Reads the JSONL transcript
+and writes a ``YYYY-MM-DD-HHMM-<slug>.md`` file into the project's conversations
+area. life-os is the first opted-in project.
 
-Routing:
-  1. Read ``.active-skill`` (written by the skill's Step 0 via the Write tool).
-  2. If absent or empty, infer the skill from ``<command-name>`` tags in the
-     transcript.
-  3. If still undetermined, route to ``conversations/_archive/`` so nothing
-     is ever dropped.
+Routing (per the project's ``capture_routing``):
+  * ``"flat"`` (default) — one ``<conversations_dir>/`` for the whole project.
+  * ``"skills"`` (life-os) — per-skill ``conversations/`` dirs under
+    ``<skills_dir>/<skill>/``, with the skill resolved by:
+      1. the ``active_marker`` file (e.g. ``.active-skill``, written by the
+         skill's Step 0), then
+      2. inference from ``<command-name>`` tags / Read paths in the transcript,
+      3. else ``<conversations_dir>/_archive/`` so nothing is ever dropped.
 
 Output file format:
   - First line: one-line human description extracted from the first
@@ -45,6 +50,7 @@ import json
 import logging
 import re
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -54,20 +60,66 @@ import _lib  # noqa: E402
 
 logger = logging.getLogger("conversation_capture")
 
-LIFE_OS = Path("E:/automation/life-os")
-ACTIVE_SKILL_FILE = LIFE_OS / ".active-skill"
-SKILLS_DIR = LIFE_OS / ".claude/skills"
-ARCHIVE_DIR = LIFE_OS / "conversations/_archive"
-
-KNOWN_SKILLS = {
-    "alt-text", "ip-check", "is-this-ai", "journal-daily", "journal-weekly",
-    "meeting-prep", "roast-posts", "sparring-private", "sparring-work", "visual-muse",
-}
-
 # Tags Claude Code embeds in user messages when a skill is invoked.
 _CMD_NAME_RE = re.compile(r"<command-name>/([^<]+)</command-name>")
-# Read tool paths that reveal which skill's private files were accessed.
-_SKILL_PATH_RE = re.compile(r"life-os[/\\]\.claude[/\\]skills[/\\]([^/\\]+)[/\\]")
+
+
+# --------------------------------------------------------------- capture config
+
+# Which projects capture, and how, is data in ``projects.toml`` (CLAUDE.md: hooks
+# stay generic, project quirks live in the registry). A project opts in with
+# ``capture = true``; everything else has a sensible default. life-os is the
+# first opted-in project, with ``capture_routing = "skills"``.
+
+
+@dataclass(frozen=True)
+class CaptureConfig:
+    root: Path                 # the project's cwd_prefix
+    routing: str               # "skills" | "flat"
+    conversations_dir: str     # subdir under root that holds captures (flat) / the _archive (skills)
+    skills_dir: str            # subdir under root holding per-skill folders (skills routing)
+    active_marker: str         # marker file a skill writes to name itself (skills routing)
+
+
+def capture_config_from_project(project) -> Optional[CaptureConfig]:
+    """Build a :class:`CaptureConfig` from a ``projects.toml`` project, or
+    ``None`` when it didn't opt in (``capture = true``). Shared by the capture
+    hook (resolve-by-cwd) and the indexer (resolve-by-name)."""
+    if project is None or not project.extra.get("capture"):
+        return None
+    extra = project.extra
+    return CaptureConfig(
+        root=Path(project.cwd_prefix),
+        routing=str(extra.get("capture_routing", "flat")),
+        conversations_dir=str(extra.get("conversations_dir", "conversations")),
+        skills_dir=str(extra.get("skills_dir", ".claude/skills")),
+        active_marker=str(extra.get("active_marker", ".active-skill")),
+    )
+
+
+def resolve_capture_config(payload: dict) -> Optional[CaptureConfig]:
+    """The capture config for the session's project, or ``None`` if it opted out.
+
+    Detects the project by the payload ``cwd`` (longest ``cwd_prefix`` match in
+    ``projects.toml``). A project with no ``capture = true`` is a silent no-op.
+    """
+    return capture_config_from_project(_lib.detect_project(_lib.cwd(payload)))
+
+
+def scan_known_skills(skills_root: Path) -> set:
+    """Direct child folders of ``skills_root``, minus ``_``-prefixed scaffolding."""
+    if not skills_root.is_dir():
+        return set()
+    try:
+        return {p.name for p in skills_root.iterdir() if p.is_dir() and not p.name.startswith("_")}
+    except OSError:
+        return set()
+
+
+def _skill_path_re(skills_dir: str) -> "re.Pattern":
+    """Regex matching ``<skills_dir>/<skill>/`` in a Read tool path (either slash)."""
+    escaped = re.escape(skills_dir).replace("/", r"[/\\]").replace("\\\\", r"[/\\]")
+    return re.compile(escaped + r"[/\\]([^/\\]+)[/\\]")
 
 
 def load_transcript(path: Path) -> list[dict]:
@@ -114,8 +166,11 @@ def extract_messages(entries: list[dict]) -> list[tuple[str, str]]:
     return messages
 
 
-def infer_skill_from_transcript(entries: list[dict]) -> Optional[str]:
+def infer_skill_from_transcript(
+    entries: list[dict], known_skills: set, skills_dir: str = ".claude/skills"
+) -> Optional[str]:
     """Best-effort skill name from command-name tags or Read tool paths."""
+    skill_path_re = _skill_path_re(skills_dir)
     for entry in entries:
         if entry.get("type") != "user":
             continue
@@ -125,7 +180,7 @@ def infer_skill_from_transcript(entries: list[dict]) -> Optional[str]:
         m = _CMD_NAME_RE.search(text)
         if m:
             candidate = m.group(1).strip()
-            if candidate in KNOWN_SKILLS:
+            if candidate in known_skills:
                 return candidate
     # Second pass: look for Read calls that touched a skill's private dir.
     for entry in entries:
@@ -133,10 +188,10 @@ def infer_skill_from_transcript(entries: list[dict]) -> Optional[str]:
             if not isinstance(field, dict):
                 continue
             path_str = str(field.get("file_path", "") or field.get("path", ""))
-            m = _SKILL_PATH_RE.search(path_str)
+            m = skill_path_re.search(path_str)
             if m:
                 candidate = m.group(1)
-                if candidate in KNOWN_SKILLS:
+                if candidate in known_skills:
                     return candidate
     return None
 
@@ -340,31 +395,38 @@ def main() -> int:
     if not transcript_path.exists():
         return 0
 
+    cfg = resolve_capture_config(payload)
+    if cfg is None:
+        return 0  # project not opted into capture — silent no-op
+
     session_id = payload.get("session_id", "")
-
-    # 1. Determine active skill.
-    skill: Optional[str] = None
-    if ACTIVE_SKILL_FILE.exists():
-        try:
-            skill = ACTIVE_SKILL_FILE.read_text(encoding="utf-8").strip()
-            ACTIVE_SKILL_FILE.unlink()
-        except OSError:
-            skill = None
-    if skill and skill not in KNOWN_SKILLS:
-        skill = None
-
     entries = load_transcript(transcript_path)
-    if not skill:
-        skill = infer_skill_from_transcript(entries)
 
-    # 2. Build output path.
-    if skill:
-        out_dir = SKILLS_DIR / skill / "conversations"
-    else:
-        out_dir = ARCHIVE_DIR
+    # 1. Build the output dir from the project's routing.
+    if cfg.routing == "skills":
+        skills_root = cfg.root / cfg.skills_dir
+        known = scan_known_skills(skills_root)
+        marker = cfg.root / cfg.active_marker
+        skill: Optional[str] = None
+        if marker.exists():
+            try:
+                skill = marker.read_text(encoding="utf-8").strip()
+                marker.unlink()
+            except OSError:
+                skill = None
+        if skill and skill not in known:
+            skill = None
+        if not skill:
+            skill = infer_skill_from_transcript(entries, known, cfg.skills_dir)
+        if skill:
+            out_dir = skills_root / skill / "conversations"
+        else:
+            out_dir = cfg.root / cfg.conversations_dir / "_archive"
+    else:  # "flat" — one conversations dir for the whole project
+        out_dir = cfg.root / cfg.conversations_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # 3. Render.
+    # 2. Render.
     messages = extract_messages(entries)
     if not messages:
         return 0  # nothing to capture (pure setup/command sessions)
