@@ -1,5 +1,7 @@
 # Local overrides — anything *.local.* is yours alone, not for the public repo
+# (…but *.local.example.* templates ARE committed, so the shape is documented)
 *.local.*
+!*.local.example.*
 settings.local.json
 
 # Secrets — never track. The Slack bot token lives in ~/.codex/config.toml and
