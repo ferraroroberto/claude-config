@@ -57,6 +57,8 @@
     padding:13px 14px 14px;display:flex;flex-direction:column;gap:12px;height:100%;}
   .pc-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   .pc-title{font-size:13px;font-weight:750;letter-spacing:.3px;color:#334155;text-transform:uppercase;}
+  .pc-note{font-size:11.5px;font-style:italic;color:var(--muted);margin:-2px 0 2px;line-height:1.4;}
+  .pc-note b{font-style:normal;color:#475569;}
   .spec{font:600 11px/1 ui-monospace,Menlo,monospace;color:#475569;background:#fff;
     border:1px solid var(--line);border-radius:6px;padding:4px 7px;}
   /* enabling row */
@@ -146,6 +148,7 @@
           <span class="spec" id="sp-cpu"></span>
           <span class="spec" id="sp-ram"></span>
         </div>
+        <div class="pc-note"><b>Local by choice.</b> Could run on a remote VPS — but it's all my data, connected to everything and made private by <b>Tailscale</b>. For now I keep it here, with backups.</div>
         <!-- enabling -->
         <div>
           <div class="zlabel" style="margin-bottom:8px"><span class="dot" style="background:var(--enable)"></span>Enabling meta-tools <span class="sub">— shared; used by more than one app</span></div>
@@ -206,7 +209,7 @@ const DATA = {
   // see system-map.local.example.js for the format.
   compute:{gpu:"GPU · &lt;model&gt; · &lt;NN&gt; GB",cpu:"CPU · &lt;model&gt; · &lt;n&gt;c/&lt;n&gt;t",ram:"RAM · &lt;NN&gt; GB"},
   enabling:[
-    {ic:"🚀",nm:"app-launcher",port:":8445",ds:"Orchestration hub — Coding · Apps · Jobs · Life OS. The front door."},
+    {ic:"🚀",nm:"app-launcher",port:":8445",ds:"<b>Where I live</b> — the central hub. Coding · Apps · Jobs · automation · Life OS, all from the phone. Born from one goal: do <i>everything</i> on the PC from mobile. The entry point to it all."},
     {ic:"🧠",nm:"local-llm-hub",port:":8000",ds:"Shared LLM gateway — routes to local models or claude -p.",
       chips:["claude -p","qwen :8081","glm :8082","gemma-e4b :8086","gemma-26b :8087"]},
     {ic:"🎙️",nm:"voice-transcriber",port:":8443",ds:"Always-on voice→text (F8). Owns whisper :8090.",chips:["whisper :8090"]},
@@ -263,8 +266,11 @@ document.getElementById("gov").innerHTML = DATA.governance.map(g=>
 // access / edge
 document.getElementById("access").innerHTML = DATA.access.map(mini).join("");
 document.getElementById("edge").innerHTML = DATA.edge.map(mini).join("");
-// specs — merge gitignored local overrides (real specs) over the placeholders
-const compute = Object.assign({}, DATA.compute, (window.LOCAL && window.LOCAL.compute) || {});
+// specs — merge gitignored local overrides (real specs) over the placeholders.
+// `?placeholders=1` forces placeholders even when system-map.local.js is present,
+// so the committed PNG never bakes in real specs (used by the /system-map skill).
+const forcePH = new URLSearchParams(location.search).has("placeholders");
+const compute = Object.assign({}, DATA.compute, (!forcePH && window.LOCAL && window.LOCAL.compute) || {});
 document.getElementById("sp-gpu").innerHTML=compute.gpu;
 document.getElementById("sp-cpu").innerHTML=compute.cpu;
 document.getElementById("sp-ram").innerHTML=compute.ram;

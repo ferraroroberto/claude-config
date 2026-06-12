@@ -51,6 +51,8 @@ One **Windows 11 PC is the entire server.** Unlike a rented VPS, all compute and
 
 > 🔒 **Exact hardware specs are personal detail kept out of git.** The real values live in `architecture/system-map.local.js` (gitignored); `architecture/system-map.local.example.js` shows the format. The visual reads them at render time — placeholders here and in the committed PNG, real values only on the local machine.
 
+> 🧭 **Local by choice (design decision).** This whole stack *could* run on a remote VPS — but everything (all my data, every app) lives and interconnects here, and **Tailscale** makes the single box completely private. For now I deliberately keep it local, with backups, rather than rent a server. Not a constraint — a preference.
+
 ---
 
 ## L1 — Connectivity & access (how I reach the system)
@@ -79,7 +81,7 @@ These are the **pieces that let me do everything else** — each is *used by mor
 
 | Project | What it is | Port | Builds on | Consumed by / External |
 |---|---|---|---|---|
-| 🚀 **app-launcher** | The **orchestration layer**: phone-first hub with four tabs — Coding (launch Claude Code / Codex / Antigravity / Copilot in any repo), Apps (launch any tray webapp), Jobs (one-shot + scheduled scripts, same executor as Stream Deck & Task Scheduler), Life OS (run a `life-os` skill). The single front door to the whole fleet. | `:8445` (+ session-host `:8446`) | L1 access, Task Scheduler | **Slack** (job-failure / status pings), **Pushover** |
+| 🚀 **app-launcher** | The **orchestration layer — where I live.** Phone-first hub with four tabs: Coding (launch Claude Code / Codex / Antigravity / Copilot in any repo), Apps (launch any tray webapp), Jobs (one-shot + scheduled scripts + automation, same executor as Stream Deck & Task Scheduler), Life OS (run a `life-os` skill). The single front door to the whole fleet — and the project that started it all: born from one goal, *do everything on the PC from the phone.* | `:8445` (+ session-host `:8446`) | L1 access, Task Scheduler | **Slack** (job-failure / status pings), **Pushover** |
 | 🧠 **local-llm-hub** | The **shared LLM gateway**: one HTTP hub exposing Anthropic-shape and OpenAI-shape APIs, routed by model name to the local models or to the `claude -p` CLI (subscription). Every app that needs an LLM call routes through here — apps never re-implement their own `claude -p` wrapper. | `:8000` | L0 GPU/RAM | downstream apps (e.g. grocery audit), coding agents |
 | 🎙️ **voice-transcriber** | The **shared speech layer**: always-on local voice-to-text (whisper.cpp), global `F8` hotkey → auto-paste at the caret. Owns the `whisper-server` on `:8090`, which other apps reuse. | `:8443` (whisper `:8090`) | L0 GPU/RAM | grocery voice-audit (whisper, mutex-shared) |
 | 📷 **photo-ocr** | Mobile-first **OCR service**: snap N photos of a document/screen/email → clean text. A reusable capture-to-text surface (tray + PWA + Cloudflare tunnel), sibling to the launcher and voice apps. | `:8444` | L1 access, L2 hub | (capture surface for downstream use) |
