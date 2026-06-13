@@ -269,9 +269,9 @@ def main() -> int:
 
 
 # Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
-# notify_complete (14) + conversation_capture (13) + conversation_index (6) +
+# notify_complete (16) + conversation_capture (13) + conversation_index (6) +
 # restart_webapp (6) + audit_issue (1) + system_map (3).
-_UNIT_CHECK_COUNT = 57
+_UNIT_CHECK_COUNT = 59
 
 
 def _system_map_coverage_check() -> int:
@@ -708,6 +708,10 @@ def _notify_complete_unit_checks() -> int:
           bm("recap", summary="5 skills swept, 3 proposals") == "🔄 Weekly recap — 5 skills swept, 3 proposals")
     check("build: recap with no summary degrades cleanly",
           bm("recap") == "🔄 Weekly recap")
+    check("build: finish-batch -> merged + blocked counts",
+          bm("finish-batch", merged="4", blocked="1") == "🏁 Finished batch: 4 merged, 1 blocked")
+    check("build: finish-batch (0 blocked) drops the blocked clause",
+          bm("finish-batch", merged="5", blocked="0") == "🏁 Finished batch: 5 merged")
 
     # The shared resolver: unknown cwd -> [global] channel/user + 'claude' name.
     ch, usr, nm = _lib.resolve_slack_target(Path("E:/does/not/match/anything"))

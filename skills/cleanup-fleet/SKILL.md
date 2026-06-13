@@ -214,7 +214,12 @@ Next: validate + /issue-finish each opus branch, one at a time.
 
 ### 11. Stop
 
-No follow-up actions. The user reviews + finishes each Opus branch manually with `/issue-finish`. Do **not** auto-launch `/issue-finish`.
+No follow-up actions. The user reviews each Opus branch, then ships them. Two ways, user's choice — **never auto-launch either**:
+
+- **`/issue-finish-batch <branches>`** — once happy with several branches, fan out one background Sonnet finisher per branch (all at once; Sonnet is exempt from the Opus cap), each running `/issue-finish` one-shot and reporting back only on a genuine blocker. The parallel path.
+- **`/issue-finish`** per branch, one at a time — the always-available manual fallback.
+
+Do **not** auto-launch either: the batch finish is user-triggered, exactly like the manual one.
 
 ## Hard rules
 

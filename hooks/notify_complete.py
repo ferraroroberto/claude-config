@@ -18,6 +18,7 @@ Usage::
     py ~/.claude/hooks/notify_complete.py --kind start  --issue 30 --summary "review the diff, then /issue-finish"
     py ~/.claude/hooks/notify_complete.py --kind yolo   --issue 30 --pr 31 --pr-url https://github.com/owner/repo/pull/31
     py ~/.claude/hooks/notify_complete.py --kind batch  --passed 2 --total 3
+    py ~/.claude/hooks/notify_complete.py --kind finish-batch --merged 4 --blocked 1
     py ~/.claude/hooks/notify_complete.py --kind audit  --comment-url https://github.com/ferraroroberto/claude-config/issues/18#issuecomment-123 --summary "3 audited, 2 issues filed, 24 unchanged"
     py ~/.claude/hooks/notify_complete.py --kind cleanup --summary documentation --merged 5 --review 2
     py ~/.claude/hooks/notify_complete.py --kind recap --summary "3 skills swept - alt-text +2, journal-daily +1"   # automatic sweep (no proposals)
@@ -28,6 +29,12 @@ For ``--kind cleanup`` (the closing roll-up of a ``/cleanup-fleet`` swarm) pass
 PR) and ``--review`` (opus issues built and awaiting ``/issue-finish``). This is
 the *final* aggregate ping — the per-issue ``🚀 Shipped`` pings each sonnet
 agent already fired (carrying their own PR links) are kept, not suppressed.
+
+For ``--kind finish-batch`` (the closing roll-up of a ``/issue-finish-batch``
+swarm) pass ``--merged`` (branches the finishers shipped) and ``--blocked``
+(branches that hit a blocker and need a human). Same contract as ``cleanup``:
+the per-issue ``✅ Done`` pings each finisher already fired are kept; this is the
+*additional* aggregate.
 
 Pass ``--pr-url`` whenever the full PR URL is already known (e.g. from ``gh pr
 create`` output). The helper will use that URL directly and look up the title
@@ -135,6 +142,7 @@ def build_message(
     total: Optional[str] = None,
     merged: Optional[str] = None,
     review: Optional[str] = None,
+    blocked: Optional[str] = None,
 ) -> str:
     """Assemble the canonical ping text (no @mention prefix). Pure / testable.
 
@@ -170,6 +178,15 @@ def build_message(
             parts.append(f"{review} awaiting review")
         tail = f": {', '.join(parts)}" if parts else ""
         return f"🧹 Cleanup{bucket}{tail}"
+    if kind == "finish-batch":
+        parts = []
+        if merged is not None:
+            parts.append(f"{merged} merged")
+        # A 0/empty blocked count is the happy path — drop the clause, don't show "0 blocked".
+        if blocked is not None and str(blocked).strip() not in ("", "0"):
+            parts.append(f"{blocked} blocked")
+        tail = f": {', '.join(parts)}" if parts else ""
+        return f"🏁 Finished batch{tail}"
     return f"✅ Done #{issue}{name}{link}"  # defensive fallback
 
 
@@ -179,7 +196,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--kind", required=True,
-        choices=["add", "start", "finish", "yolo", "batch", "audit", "cleanup", "recap"]
+        choices=["add", "start", "finish", "yolo", "batch", "audit", "cleanup", "recap", "finish-batch"]
     )
     parser.add_argument("--issue", help="Issue number (shown as #N).")
     parser.add_argument("--pr", help="PR number, for finish/yolo (linked).")
@@ -198,8 +215,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--summary", help="One concise summary line, for start/audit.")
     parser.add_argument("--passed", help="Passed count, for batch.")
     parser.add_argument("--total", help="Total count, for batch.")
-    parser.add_argument("--merged", help="Merged-PR count, for cleanup.")
+    parser.add_argument("--merged", help="Merged-PR count, for cleanup / finish-batch.")
     parser.add_argument("--review", help="Awaiting-review count, for cleanup.")
+    parser.add_argument("--blocked", help="Blocked-branch count, for finish-batch.")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
@@ -209,7 +227,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0  # opt-in: not configured → silent no-op
 
     title, url = (None, None)
-    if args.kind not in ("batch", "cleanup", "recap"):
+    if args.kind not in ("batch", "cleanup", "recap", "finish-batch"):
         title, url = lookup(
             args.kind, args.issue, args.pr,
             pr_url=args.pr_url, comment_url=getattr(args, "comment_url", None),
@@ -225,6 +243,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         total=args.total,
         merged=args.merged,
         review=args.review,
+        blocked=args.blocked,
     )
     # The @mention decision is single-sourced in slack_notify.notify() (off by
     # default); pass the resolved user id and let it decide.
