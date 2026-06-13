@@ -224,13 +224,14 @@ All <N> sub-agents complete.
   ✅ <repo>#<N> ready for review — `cd <path> && /issue-finish`
   ❌ <repo>#<N> verification failed — inspect <path>
 
-Next: review each branch and run /issue-finish one at a time
-(sequential merges avoid CI pile-up and tray-restart races).
-Remember: after `/issue-finish` merges a worktree-mode branch,
-clean up with `git worktree remove <wt-path>` (run from the
-primary checkout, not from inside the worktree).
+Next: review each branch, then ship — either `/issue-finish-batch <branches>`
+to fan out parallel Sonnet finishers once you're happy with several, or
+`/issue-finish` one at a time (sequential merges avoid CI pile-up and
+tray-restart races). Remember: after a worktree-mode branch merges, clean up
+with `git worktree remove <wt-path>` (run from the primary checkout, not from
+inside the worktree).
 ```
 
 ### 10. Stop
 
-No follow-up actions. The user reviews + finishes each branch manually with `/issue-finish`. Do **not** auto-launch `/issue-finish`.
+No follow-up actions. The user reviews each branch, then ships — via `/issue-finish-batch <branches>` (parallel Sonnet finishers, blocker-only escalation) or `/issue-finish` per branch (manual fallback). Do **not** auto-launch either.
